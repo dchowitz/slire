@@ -1,6 +1,6 @@
-import { createSmartMongoRepo } from '@chd/smart-repo';
 import { omit, range, sortBy } from 'lodash-es';
 import { Collection } from 'mongodb';
+import { createSmartMongoRepo } from '../lib/smart-repo';
 import { mongo, setupMongo, teardownMongo } from './mongo-fixture';
 
 describe('createSmartMongoRepo', function () {
