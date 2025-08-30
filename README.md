@@ -1183,6 +1183,12 @@ const veryExpensiveTravel = await findExpensesBySpec(
 );
 ```
 
+- point out that spec factories can be made arbitrary complex - for example they could reach out to external data async to collect everything necessary to build the spec (feature flags, A/B testing toggles, current user) - or they keep internal state that gets changed with each `toFilter` invocation (pagination is a bad example for server-side code, any idea?) - however, try to contain complexity and put only logic into spec factories that is immanent
+
+- point out that injecting smth like `findExpensesBySpec` into business logic functions is basically the same as injection the pure, more-direct `find` function as the business logic can query whatever it wants by building specs ad-hoc. so consider wrapping findBySpec(specX) into named queries as well or provide a spec registry/factory to choose from
+
+- I wonder if it would be worthwhile to extend the smart-repo interface with a `findBySpec` and `countBySpec` function as a convenience over `findExpensesBySpec` and `countExpensesBySpec` shown in the example above
+
 #### Repository Extension
 
 Another approach is extending your repository with domain-specific methods:
