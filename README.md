@@ -1090,68 +1090,95 @@ Note: These query functions can be made more flexible by accepting optional proj
 
 #### Query Specifications
 
-For more complex scenarios, consider the specification pattern. This pattern is particularly useful when you need both `find` and `count` operations with identical filter logic, avoiding the duplication you might see with named query functions:
+For more complex scenarios, consider the specification pattern. This pattern is particularly useful when you need both `find` and `count` operations with identical filter logic, avoiding the duplication you might see with named query functions.
+
+The core idea behind specifications is to encapsulate business rules and query criteria as composable, first-class objects. Rather than scattering filter logic throughout your codebase, specifications let you define reusable criteria that can be combined, tested in isolation, and applied consistently across different operations. These specifications can be used both within repository contexts and, depending on the native client SDK, directly with database operations - in MongoDB's case, the filter objects work seamlessly with native collection methods.
+
+In the following example, each specification represents a single business concept - "overdue expenses", "high-value transactions", "user-accessible data" - making your query logic more readable and maintainable. The real power emerges when you compose specifications together, building complex queries from simple, well-tested building blocks.
 
 ```typescript
 // expense-specifications.ts
-interface ExpenseSpecification {
-  toFilter(): Partial<Expense>;
-  describe(): string;
+type ExpenseSpecification = {
+  toFilter(): Partial<Expense>; // fn over constant because sometimes filters need dynamic evaluation
+  describe: string;
+};
+
+// Factory functions for creating specifications
+function overdueExpenseSpec(daysOverdue: number): ExpenseSpecification {
+  return {
+    toFilter: () => {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysOverdue);
+
+      return {
+        status: 'pending',
+        submittedAt: { $lt: cutoffDate },
+      };
+    },
+    describe: `expenses overdue by ${daysOverdue} days`,
+  };
 }
 
-class OverdueExpenseSpec implements ExpenseSpecification {
-  constructor(private daysOverdue: number) {}
-
-  toFilter(): Partial<Expense> {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - this.daysOverdue);
-
-    return {
-      status: 'pending',
-      submittedAt: { $lt: cutoffDate },
-    };
-  }
-
-  describe(): string {
-    return `expenses overdue by ${this.daysOverdue} days`;
-  }
+function categoryExpenseSpec(categoryId: string): ExpenseSpecification {
+  const filter = { categoryId };
+  return {
+    toFilter: () => filter,
+    describe: `expenses in category ${categoryId}`,
+  };
 }
 
-class CategoryExpenseSpec implements ExpenseSpecification {
-  constructor(private categoryId: string) {}
-
-  toFilter(): Partial<Expense> {
-    return { categoryId: this.categoryId };
-  }
-
-  describe(): string {
-    return `expenses in category ${this.categoryId}`;
-  }
+function highValueExpenseSpec(minAmount: number): ExpenseSpecification {
+  const filter = { totalClaim: { $gte: minAmount } };
+  return {
+    toFilter: () => filter,
+    describe: `expenses above ${minAmount}`,
+  };
 }
 
-// Combined specifications
-class CompositeExpenseSpec implements ExpenseSpecification {
-  constructor(private specs: ExpenseSpecification[]) {}
-
-  toFilter(): Partial<Expense> {
-    return this.specs.reduce(
-      (filter, spec) => ({ ...filter, ...spec.toFilter() }),
-      {} as Partial<Expense>
-    );
-  }
-
-  describe(): string {
-    return this.specs.map((spec) => spec.describe()).join(' AND ');
-  }
+// Functional composition
+function combineSpecs(...specs: ExpenseSpecification[]): ExpenseSpecification {
+  return {
+    toFilter: () =>
+      specs.reduce(
+        (filter, spec) => ({ ...filter, ...spec.toFilter() }),
+        {} as Partial<Expense>
+      ),
+    describe: specs.map((spec) => spec.describe).join(' AND '),
+  };
 }
 
-// Usage
+// Usage functions
 async function findExpensesBySpec(
-  deps: { find: ExpenseRepo['find'] },
+  deps: { find: FindExpenses },
   spec: ExpenseSpecification
 ) {
   return await deps.find(spec.toFilter());
 }
+
+async function countExpensesBySpec(
+  deps: { count: CountExpenses },
+  spec: ExpenseSpecification
+) {
+  return await deps.count(spec.toFilter());
+}
+
+// Example usage showing functional composition power
+function createOverdueTravelExpensesAboveSpec(minAmount: number) {
+  return combineSpecs(
+    overdueExpenseSpec(30),
+    categoryExpenseSpec('travel'),
+    highValueExpenseSpec(minAmount)
+  );
+}
+
+const expensiveTravel = await findExpensesBySpec(
+  deps,
+  createOverdueTravelExpensesAboveSpec(500)
+);
+const veryExpensiveTravel = await findExpensesBySpec(
+  deps,
+  createOverdueTravelExpensesAboveSpec(1000)
+);
 ```
 
 #### Repository Extension
