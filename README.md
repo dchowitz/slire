@@ -1,6 +1,48 @@
 # SmartRepo
 
+- [What the Heck is SmartRepo?](#what-the-heck-is-smartrepo)
+- [A Quick Glimpse](#a-quick-glimpse)
+- [API Reference Core CRUD Operations (SmartRepo interface)](#api-reference-core-crud-operations-smartrepo-interface)
+  - [getById](#getbyid)
+  - [getByIds](#getbyids)
+  - [create](#create)
+  - [createMany](#createmany)
+  - [update](#update)
+  - [updateMany](#updatemany)
+  - [upsert](#upsert)
+  - [upsertMany](#upsertmany)
+  - [delete](#delete)
+  - [deleteMany](#deletemany)
+  - [find](#find)
+  - [count](#count)
+- [MongoDB Implementation](#mongodb-implementation)
+  - [createSmartMongoRepo](#createsmartmongorepo)
+    - [Scope](#scope)
+    - [Options](#options)
+  - [withSession](#withsession)
+  - [runTransaction](#runtransaction)
+  - [collection](#collection)
+  - [applyScopeForRead](#applyscopeforread)
+  - [applyScopeForWrite](#applyscopeforwrite)
+  - [buildUpdateOperation](#buildupdateoperation)
+- [Recommended Usage Patterns](#recommended-usage-patterns)
+  - [Repository Factories](#repository-factories)
+  - [Export Repository Types](#export-repository-types)
+  - [Always Use Helper Methods for Direct Collection Operations](#always-use-helper-methods-for-direct-collection-operations)
+- [Decoupling Business Logic from Data Access](#decoupling-business-logic-from-data-access)
+  - [Explicit Dependencies](#explicit-dependencies)
+  - [Sandwich Method](#sandwich-method)
+  - [Specialized Data Access Functions](#specialized-data-access-functions)
+  - [Data Access Adapters](#data-access-adapters)
+  - [Business Logic with Transactions](#business-logic-with-transactions)
+  - [Client-Side Stored Procedures](#client-side-stored-procedures)
+
+---
+
+## What the Heck is SmartRepo?
+
 `SmartRepo` is a DB-agnostic interface that provides simple DB operations. It comes with implementations for MongoDB and Firestore.
+
 It started as an experiment trying to bridge the gap between the `DocumentService`'s insufficiencies and doing DB access via
 native SDKs only.
 
@@ -59,7 +101,7 @@ const expenseRepo = createSmartMongoRepo({
   collection: mongoClient.db('expenseDb').collection<Expense>('expenses'),
   mongoClient,
   scope: { organizationId: 'acme-123' }, // applied to all reads and writes
-  options: { generateId: generateExpenseId } // all options are optional and come with sensible defaults
+  options: { generateId: generateExpenseId }, // all options are optional and come with sensible defaults
 });
 
 // better to have a factory enforcing constraints and encapsulating db/collection names
@@ -68,7 +110,7 @@ function createExpenseRepo(client: MongoClient, organizationId: string) {
     collection: client.db('expenseDb').collection<Expense>('expenses'),
     mongoClient: client,
     scope: { organizationId },
-    options: { generateId: generateExpenseId }
+    options: { generateId: generateExpenseId },
   });
 }
 ```
@@ -92,7 +134,7 @@ The full list is documented in the [API Reference](#api-reference-core-crud-oper
 Here's how [transactions](#runtransaction) work:
 
 ```typescript
-await repo.runTransaction(async tx => {
+await repo.runTransaction(async (tx) => {
   // tx is a transaction-session-aware repository instance
   // providing exactly the same functionality as the outer repo
   // except that all its operations happen in a transaction
@@ -102,7 +144,7 @@ await repo.runTransaction(async tx => {
 
   // update based on what we just read
   await tx.updateMany(
-    johns.map(j => j.id),
+    johns.map((j) => j.id),
     { set: { country: someCondition(johns) ? 'US' : 'UK' } }
   );
 });
@@ -111,14 +153,14 @@ await repo.runTransaction(async tx => {
 This can be written more verbosely like this (revealing how `runTransaction` is implemented):
 
 ```typescript
-await mongoClient.withSession(async session => {
+await mongoClient.withSession(async (session) => {
   await session.withTransaction(async () => {
     const tx = repo.withSession(session); // a new transaction-aware repo instance
 
     const johns = await tx.find({ userId: 'john-doe' }, { id: true });
 
     await tx.updateMany(
-      johns.map(j => j.id),
+      johns.map((j) => j.id),
       { set: { country: someCondition(johns) ? 'US' : 'UK' } }
     );
   });
@@ -136,7 +178,7 @@ that determines the top expenses per category given an organization and currency
 export async function markTopExpenses({
   mongoClient,
   organizationId,
-  currency
+  currency,
 }: {
   mongoClient: MongoClient;
   organizationId: string;
@@ -145,7 +187,7 @@ export async function markTopExpenses({
   const TOP_MARKER = 'customInformation.top';
   const repo = createExpenseRepo(mongoClient, organizationId);
 
-  await mongoClient.withSession(async session => {
+  await mongoClient.withSession(async (session) => {
     await session.withTransaction(async () => {
       // remove marker from all current top expenses
       await repo.collection.updateMany(
@@ -161,7 +203,7 @@ export async function markTopExpenses({
           [
             { $match: repo.applyScopeForRead({ currency }) }, // -> applyScopeForRead ensures org scope
             { $sort: { category: 1, totalClaim: -1 } },
-            { $group: { _id: '$categoryId', expenseId: { $first: '$_id' } } }
+            { $group: { _id: '$categoryId', expenseId: { $first: '$_id' } } },
           ],
           { session }
         )
@@ -169,11 +211,11 @@ export async function markTopExpenses({
 
       // set the marker for the new top expenses
       await repo.collection.bulkWrite(
-        topExpenses.map(e => ({
+        topExpenses.map((e) => ({
           updateOne: {
             filter: repo.applyScopeForWrite({ _id: e.expenseId }), // -> again, ensure org scope
-            update: repo.buildUpdateOperation({ set: { [TOP_MARKER]: true } }) // -> applies timestamps etc. if configured
-          }
+            update: repo.buildUpdateOperation({ set: { [TOP_MARKER]: true } }), // -> applies timestamps etc. if configured
+          },
         })),
         { session }
       );
@@ -441,7 +483,10 @@ await repo.collection.updateMany(
 );
 
 // ❌ BAD - bypasses repository consistency
-await repo.collection.updateMany({ status: 'active' }, { $set: { processed: true } });
+await repo.collection.updateMany(
+  { status: 'active' },
+  { $set: { processed: true } }
+);
 ```
 
 ## Decoupling Business Logic from Data Access
@@ -493,10 +538,6 @@ await handler({ process: processor.processExpense.bind(processor), otherDep: ...
 
 TODOs:
 
-- client-side stored procedures - any difference to special data access functions?
-  - maybe: a lot of data munching, business logic neglectable
-  - representing one task, may use transaction internally
-  - reaches out to the few business logic functions directly
 - think twice before injecting `find` and `count`
 - what about arbitrary queries?
 - consider adapter type for data access (and consequently a factory)
@@ -508,7 +549,10 @@ As mentioned in the repository type section above, injecting whole repository in
 
 ```typescript
 // ❌ BAD - whole repository injected, unclear dependencies
-async function processExpense(deps: { expenseRepo: ExpenseRepo }, expenseId: string) {
+async function processExpense(
+  deps: { expenseRepo: ExpenseRepo },
+  expenseId: string
+) {
   const expense = await deps.expenseRepo.getById(expenseId);
   if (!expense || expense.status !== 'pending') return;
 
@@ -597,7 +641,10 @@ async function processExpenseReimbursement(
   if (!user) throw new Error('User not found');
 
   // 2. PROCESS - pure business logic
-  const reimbursementAmount = calculateReimbursement(expense, user.reimbursementRate);
+  const reimbursementAmount = calculateReimbursement(
+    expense,
+    user.reimbursementRate
+  );
   const taxDeduction = calculateTaxes(reimbursementAmount, user.taxBracket);
   const finalAmount = reimbursementAmount - taxDeduction;
 
@@ -606,13 +653,13 @@ async function processExpenseReimbursement(
     userId: expense.userId,
     amount: finalAmount,
     taxDeducted: taxDeduction,
-    processedAt: new Date()
+    processedAt: new Date(),
   };
 
   // 3. WRITE - persist changes
   await deps.updateExpense(expenseId, {
     status: 'reimbursed',
-    reimbursedAt: new Date()
+    reimbursedAt: new Date(),
   });
 
   const reimbursementId = await deps.createReimbursement(reimbursementData);
@@ -665,7 +712,10 @@ async function processExpenseReimbursement(
   const { expense, user } = data;
 
   // 2. PROCESS - pure business logic
-  const reimbursementAmount = calculateReimbursement(expense, user.reimbursementRate);
+  const reimbursementAmount = calculateReimbursement(
+    expense,
+    user.reimbursementRate
+  );
   const taxDeduction = calculateTaxes(reimbursementAmount, user.taxBracket);
   const finalAmount = reimbursementAmount - taxDeduction;
 
@@ -674,11 +724,14 @@ async function processExpenseReimbursement(
     userId: expense.userId,
     amount: finalAmount,
     taxDeducted: taxDeduction,
-    processedAt: new Date()
+    processedAt: new Date(),
   };
 
   // 3. WRITE - single specialized function handles complex persistence
-  const reimbursementId = await deps.finalizeReimbursement({ expenseId, reimbursementData });
+  const reimbursementId = await deps.finalizeReimbursement({
+    expenseId,
+    reimbursementData,
+  });
 
   return { reimbursementId, amount: finalAmount };
 }
@@ -793,13 +846,20 @@ async function processExpenseReimbursementWithTransaction(
   organizationId: string,
   expenseId: string
 ) {
-  return await mongoClient.withSession(async session => {
+  return await mongoClient.withSession(async (session) => {
     return await session.withTransaction(async () => {
       // Create transaction-aware data access functions - session passed directly
-      const transactionDataAccess = createReimbursementDataAccess(mongoClient, organizationId, session);
+      const transactionDataAccess = createReimbursementDataAccess(
+        mongoClient,
+        organizationId,
+        session
+      );
 
       // Call the unchanged business logic function
-      return await processExpenseReimbursement(transactionDataAccess, expenseId);
+      return await processExpenseReimbursement(
+        transactionDataAccess,
+        expenseId
+      );
     });
   });
 }
@@ -817,7 +877,11 @@ async function processExpenseReimbursementWithTransaction(
 
 ```typescript
 // With transaction
-const result = await processExpenseReimbursementWithTransaction(mongoClient, organizationId, expenseId);
+const result = await processExpenseReimbursementWithTransaction(
+  mongoClient,
+  organizationId,
+  expenseId
+);
 
 // Without transaction (using the original function)
 const dataAccess = createReimbursementDataAccess(mongoClient, organizationId);
@@ -825,3 +889,93 @@ const result2 = await processExpenseReimbursement(dataAccess, expenseId);
 ```
 
 This pattern keeps the business logic clean while giving callers full control over transaction boundaries.
+
+### Client-Side Stored Procedures
+
+Client-side stored procedures are self-contained, parameterizable functions that encapsulate complete data processing workflows. Unlike traditional stored procedures that run on the database server, these functions execute on the client side while leveraging the repository's consistency features and native database capabilities.
+
+The key characteristics that distinguish client-side stored procedures from [specialized data access functions](#specialized-data-access-functions):
+
+- **End-to-end processing**: Handle complete use cases from data gathering through final persistence
+- **Self-contained**: Operate independently rather than as building blocks for other workflows
+- **Data-focused**: Primarily concerned with data transformation, aggregation, and maintenance operations
+- **Transactional by nature**: Often require atomicity across multiple operations
+- **Batch-oriented**: Typically process multiple records or perform complex data maintenance
+
+The `markTopExpenses` function from the [Quick Glimpse](#a-quick-glimpse) section is a perfect example:
+
+```typescript
+export async function markTopExpenses({
+  mongoClient,
+  organizationId,
+  currency,
+}: {
+  mongoClient: MongoClient;
+  organizationId: string;
+  currency: string;
+}): Promise<void> {
+  const TOP_MARKER = 'customInformation.top';
+  const repo = createExpenseRepo(mongoClient, organizationId);
+
+  await mongoClient.withSession(async (session) => {
+    await session.withTransaction(async () => {
+      // Remove marker from all current top expenses
+      await repo.collection.updateMany(
+        repo.applyScopeForWrite({ currency, [TOP_MARKER]: true }),
+        repo.buildUpdateOperation({ unset: { [TOP_MARKER]: 1 } }),
+        { session }
+      );
+
+      // Determine new top expenses via aggregation
+      const topExpenses = await repo.collection
+        .aggregate<{ expenseId: string }>(
+          [
+            { $match: repo.applyScopeForRead({ currency }) },
+            { $sort: { category: 1, totalClaim: -1 } },
+            { $group: { _id: '$categoryId', expenseId: { $first: '$_id' } } },
+          ],
+          { session }
+        )
+        .toArray();
+
+      // Apply marker to new top expenses
+      await repo.collection.bulkWrite(
+        topExpenses.map((e) => ({
+          updateOne: {
+            filter: repo.applyScopeForWrite({ _id: e.expenseId }),
+            update: repo.buildUpdateOperation({ set: { [TOP_MARKER]: true } }),
+          },
+        })),
+        { session }
+      );
+    });
+  });
+}
+```
+
+**When to use** client-side stored procedures:
+
+- **Data maintenance operations**: Batch updates, cleanup routines, or data migrations
+- **Complex calculations**: Operations requiring aggregations, transformations, or multi-step computations
+- **Reporting workflows**: Generating summary data or computed fields
+- **Batch processing**: Operations that work on large sets of data
+- **Administrative functions**: System maintenance or configuration updates
+
+**Design principles:**
+
+- **Parameterize inputs**: Accept specific parameters rather than hardcoding values
+- **Maintain scoping**: Always use repository helper methods for scope consistency
+- **Handle transactions**: Most procedures should be atomic operations
+- **Document side effects**: Clearly document what data changes occur
+- **Consider idempotency**: Design procedures to be safely re-runnable when possible
+
+**Testing** client-side stored procedures:
+
+These functions are excellent candidates for integration tests that run against a test database, as they combine business logic with complex data operations that are difficult to mock effectively. Focus your testing on:
+
+- **Correct data transformations**: Verify the procedure produces expected results
+- **Transaction behavior**: Ensure atomicity and proper rollback on errors
+- **Scope enforcement**: Confirm operations respect organizational boundaries
+- **Edge cases**: Test with empty datasets, boundary conditions, and error scenarios
+
+Client-side stored procedures occupy a unique space in your data access architecture - they're more substantial than specialized data access functions but remain client-side rather than moving complex logic to the database server. This approach maintains the benefits of TypeScript typing, application-level testing, and repository consistency features while handling complex data processing requirements.
