@@ -1097,13 +1097,27 @@ The core idea behind specifications is to encapsulate business rules and query c
 In the following example, each specification represents a single business concept - "overdue expenses", "high-value transactions", "user-accessible data" - making your query logic more readable and maintainable. The real power emerges when you compose specifications together, building complex queries from simple, well-tested building blocks.
 
 ```typescript
-// expense-specifications.ts
-type ExpenseSpecification = {
-  toFilter(): Partial<Expense>; // fn over constant because sometimes filters need dynamic evaluation
+// Generic specification pattern
+type Specification<T> = {
+  toFilter(): Partial<T>; // fn over constant because sometimes filters need dynamic evaluation
   describe: string;
 };
 
-// Factory functions for creating specifications
+// Generic functional composition
+function combineSpecs<T>(...specs: Specification<T>[]): Specification<T> {
+  return {
+    toFilter: () =>
+      specs.reduce(
+        (filter, spec) => ({ ...filter, ...spec.toFilter() }),
+        {} as Partial<T>
+      ),
+    describe: specs.map((spec) => spec.describe).join(' AND '),
+  };
+}
+
+// Expense-specific implementations
+type ExpenseSpecification = Specification<Expense>;
+
 function overdueExpenseSpec(daysOverdue: number): ExpenseSpecification {
   return {
     toFilter: () => {
@@ -1132,18 +1146,6 @@ function highValueExpenseSpec(minAmount: number): ExpenseSpecification {
   return {
     toFilter: () => filter,
     describe: `expenses above ${minAmount}`,
-  };
-}
-
-// Functional composition
-function combineSpecs(...specs: ExpenseSpecification[]): ExpenseSpecification {
-  return {
-    toFilter: () =>
-      specs.reduce(
-        (filter, spec) => ({ ...filter, ...spec.toFilter() }),
-        {} as Partial<Expense>
-      ),
-    describe: specs.map((spec) => spec.describe).join(' AND '),
   };
 }
 
