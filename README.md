@@ -17,8 +17,6 @@
   - [count](#count)
 - [MongoDB Implementation](#mongodb-implementation)
   - [createSmartMongoRepo](#createsmartmongorepo)
-    - [Scope](#scope)
-    - [Options](#options)
   - [withSession](#withsession)
   - [runTransaction](#runtransaction)
   - [collection](#collection)
@@ -36,6 +34,7 @@
   - [Data Access Adapters](#data-access-adapters)
   - [Business Logic with Transactions](#business-logic-with-transactions)
   - [Client-Side Stored Procedures](#client-side-stored-procedures)
+  - [Query Abstraction Patterns](#query-abstraction-patterns)
 
 ---
 
@@ -538,8 +537,6 @@ await handler({ process: processor.processExpense.bind(processor), otherDep: ...
 
 TODOs:
 
-- think twice before injecting `find` and `count`
-- what about arbitrary queries?
 - consider adapter type for data access (and consequently a factory)
 - big factory as alternative for purpose-built adapters
 
@@ -865,15 +862,15 @@ async function processExpenseReimbursementWithTransaction(
 }
 ```
 
-**Key benefits of this approach:**
+Key benefits of this approach:
 
-- **Clean separation**: Business logic function remains unchanged and transaction-agnostic
-- **Self-contained adapters**: Adapters manage their own repository dependencies internally
-- **Simplified session handling**: Just pass the session to the adapter, no manual repository creation
-- **Consistent interface**: Same adapter function works with or without transactions
-- **Easy testing**: Business logic can be tested independently of transaction concerns
+- Clean separation - business logic function remains unchanged and transaction-agnostic
+- Self-contained adapters - adapters manage their own repository dependencies internally
+- Simplified session handling - just pass the session to the adapter, no manual repository creation
+- Consistent interface - same adapter function works with or without transactions
+- Easy testing - business logic can be tested independently of transaction concerns
 
-**Usage:**
+Usage:
 
 ```typescript
 // With transaction
@@ -953,29 +950,304 @@ export async function markTopExpenses({
 }
 ```
 
-**When to use** client-side stored procedures:
+When to use client-side stored procedures:
 
-- **Data maintenance operations**: Batch updates, cleanup routines, or data migrations
-- **Complex calculations**: Operations requiring aggregations, transformations, or multi-step computations
-- **Reporting workflows**: Generating summary data or computed fields
-- **Batch processing**: Operations that work on large sets of data
-- **Administrative functions**: System maintenance or configuration updates
+- Data maintenance operations - batch updates, cleanup routines, or data migrations
+- Complex calculations - operations requiring aggregations, transformations, or multi-step computations
+- Reporting workflows - generating summary data or computed fields
+- Batch processing - operations that work on large sets of data
+- Administrative functions - system maintenance or configuration updates
 
-**Design principles:**
+Design principles:
 
-- **Parameterize inputs**: Accept specific parameters rather than hardcoding values
-- **Maintain scoping**: Always use repository helper methods for scope consistency
-- **Handle transactions**: Most procedures should be atomic operations
-- **Document side effects**: Clearly document what data changes occur
-- **Consider idempotency**: Design procedures to be safely re-runnable when possible
+- Parameterize inputs - accept specific parameters rather than hardcoding values
+- Maintain scoping - always use repository helper methods for scope consistency
+- Handle transactions - most procedures should be atomic operations
+- Document side effects - clearly document what data changes occur
+- Consider idempotency - design procedures to be safely re-runnable when possible
 
-**Testing** client-side stored procedures:
+Testing client-side stored procedures:
 
 These functions are excellent candidates for integration tests that run against a test database, as they combine business logic with complex data operations that are difficult to mock effectively. Focus your testing on:
 
-- **Correct data transformations**: Verify the procedure produces expected results
-- **Transaction behavior**: Ensure atomicity and proper rollback on errors
-- **Scope enforcement**: Confirm operations respect organizational boundaries
-- **Edge cases**: Test with empty datasets, boundary conditions, and error scenarios
+- Correct data transformations - verify the procedure produces expected results
+- Transaction behavior - ensure atomicity and proper rollback on errors
+- Scope enforcement - confirm operations respect organizational boundaries
+- Edge cases - test with empty datasets, boundary conditions, and error scenarios
 
 Client-side stored procedures occupy a unique space in your data access architecture - they're more substantial than specialized data access functions but remain client-side rather than moving complex logic to the database server. This approach maintains the benefits of TypeScript typing, application-level testing, and repository consistency features while handling complex data processing requirements.
+
+### Query Abstraction Patterns
+
+One of the ongoing tensions in data access design is how to handle arbitrary queries. SmartRepo provides generic query capabilities through `find` and `count` methods. However, injecting these methods directly into business logic can couple your domain logic to query implementation details, even though the queries remain DB-agnostic.
+
+The fundamental question becomes: **when should you wrap queries in specialized functions versus injecting generic query capabilities directly?**
+
+As with most architectural decisions, there's no universal answer - the choice depends on your specific context, complexity, and trade-offs. Let's explore the patterns and decision criteria.
+
+#### Direct Query Injection
+
+The simplest approach is injecting `find` and `count` methods directly into business logic:
+
+```typescript
+async function generateExpenseReport(
+  deps: {
+    find: ExpenseRepo['find'];
+    count: ExpenseRepo['count'];
+  },
+  params: { daysOverdue: number; userId: string }
+) {
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - params.daysOverdue);
+
+  // Business logic directly specifies different queries
+  const overdueExpenses = await deps.find({
+    status: 'pending',
+    submittedAt: { $lt: cutoffDate },
+  });
+
+  const totalUserExpenses = await deps.count({
+    userId: params.userId,
+  });
+
+  return {
+    overdueExpenses,
+    totalUserExpenses,
+    reportDate: new Date(),
+  };
+}
+```
+
+Benefits:
+
+- Simple and direct - no additional abstraction layer
+- Flexible - business logic can specify exactly what it needs
+- Rapid development - quick to implement and modify
+- DB-agnostic - still maintains portability across database implementations
+
+Drawbacks:
+
+- Query coupling - business logic knows about data structure and query patterns
+- Repetition - similar queries may be duplicated across functions
+- Testing complexity - tests must understand query structure
+- Change impact - database schema changes ripple into business logic
+
+#### Query Wrapping Patterns
+
+Several patterns can abstract queries behind more semantic interfaces:
+
+##### Named Query Functions
+
+Create purpose-built functions that encapsulate specific query logic:
+
+```typescript
+// expense-queries.ts
+export function createExpenseQueries(repo: ExpenseRepo) {
+  return {
+    findOverdueExpenses: async (daysOverdue: number) => {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysOverdue);
+
+      return await repo.find({
+        status: 'pending',
+        submittedAt: { $lt: cutoffDate },
+      });
+    },
+
+    countOverdueExpenses: async (daysOverdue: number) => {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysOverdue);
+
+      return await repo.count({
+        status: 'pending',
+        submittedAt: { $lt: cutoffDate },
+      });
+    },
+
+    findExpensesByCategory: async (categoryId: string) => {
+      return await repo.find({ categoryId });
+    },
+  };
+}
+
+// Usage
+async function processOverdueExpenses(
+  deps: {
+    findOverdueExpenses: ReturnType<
+      typeof createExpenseQueries
+    >['findOverdueExpenses'];
+    countOverdueExpenses: ReturnType<
+      typeof createExpenseQueries
+    >['countOverdueExpenses'];
+  },
+  params: { daysOverdue: number }
+) {
+  const expenses = await deps.findOverdueExpenses(params.daysOverdue);
+  const totalCount = await deps.countOverdueExpenses(params.daysOverdue);
+
+  // Business logic focused on domain concepts, not queries
+  return processExpenseList(expenses, totalCount);
+}
+```
+
+##### Query Specifications
+
+For more complex scenarios, consider the specification pattern:
+
+```typescript
+// expense-specifications.ts
+interface ExpenseSpecification {
+  toFilter(): Partial<Expense>;
+  describe(): string;
+}
+
+class OverdueExpenseSpec implements ExpenseSpecification {
+  constructor(private daysOverdue: number) {}
+
+  toFilter(): Partial<Expense> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - this.daysOverdue);
+
+    return {
+      status: 'pending',
+      submittedAt: { $lt: cutoffDate },
+    };
+  }
+
+  describe(): string {
+    return `expenses overdue by ${this.daysOverdue} days`;
+  }
+}
+
+class CategoryExpenseSpec implements ExpenseSpecification {
+  constructor(private categoryId: string) {}
+
+  toFilter(): Partial<Expense> {
+    return { categoryId: this.categoryId };
+  }
+
+  describe(): string {
+    return `expenses in category ${this.categoryId}`;
+  }
+}
+
+// Combined specifications
+class CompositeExpenseSpec implements ExpenseSpecification {
+  constructor(private specs: ExpenseSpecification[]) {}
+
+  toFilter(): Partial<Expense> {
+    return this.specs.reduce(
+      (filter, spec) => ({ ...filter, ...spec.toFilter() }),
+      {} as Partial<Expense>
+    );
+  }
+
+  describe(): string {
+    return this.specs.map((spec) => spec.describe()).join(' AND ');
+  }
+}
+
+// Usage
+async function findExpensesBySpec(
+  deps: { find: ExpenseRepo['find'] },
+  spec: ExpenseSpecification
+) {
+  return await deps.find(spec.toFilter());
+}
+```
+
+##### Repository Extension
+
+Another approach is extending your repository with domain-specific methods:
+
+```typescript
+function createExtendedExpenseRepo(baseRepo: ExpenseRepo) {
+  return {
+    ...baseRepo,
+
+    async findOverdueExpenses(daysOverdue: number) {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysOverdue);
+
+      return await baseRepo.find({
+        status: 'pending',
+        submittedAt: { $lt: cutoffDate },
+      });
+    },
+
+    async findExpensesByDateRange(startDate: Date, endDate: Date) {
+      return await baseRepo.find({
+        submittedAt: { $gte: startDate, $lte: endDate },
+      });
+    },
+
+    async findPendingExpensesAboveAmount(amount: number) {
+      return await baseRepo.find({
+        status: 'pending',
+        totalClaim: { $gte: amount },
+      });
+    },
+  };
+}
+```
+
+#### Decision Criteria
+
+Choose direct query injection when:
+
+- Simple queries - basic filters that are unlikely to change
+- One-off operations - queries used in only one place
+- Rapid prototyping - speed of development is more important than abstraction
+- Exploratory work - you're still discovering the right query patterns
+- Small teams - less coordination overhead for query changes
+
+Choose query wrapping when:
+
+- Complex query logic - multi-step filters, date calculations, or business rules
+- Reused patterns - the same query appears in multiple places
+- Business-critical queries - operations that need careful testing and validation
+- Evolving requirements - queries likely to change as business rules evolve
+- Large teams - multiple developers need to use the same query patterns
+- Testing isolation - you want to test business logic independently of query structure
+
+#### Hybrid Approaches
+
+Don't feel constrained to choose one pattern universally. Consider mixing approaches based on the complexity and usage patterns of different queries:
+
+```typescript
+// Simple, direct injection for basic lookups
+async function getExpenseDetails(
+  deps: { getById: ExpenseRepo['getById'] },
+  expenseId: string
+) {
+  return await deps.getById(expenseId);
+}
+
+// Wrapped queries for complex, reusable operations
+async function generateExpenseReport(
+  deps: {
+    findOverdueExpenses: ExpenseQueries['findOverdueExpenses'];
+    findHighValueExpenses: ExpenseQueries['findHighValueExpenses'];
+  },
+  params: ReportParams
+) {
+  // Business logic uses semantic query functions
+  const overdueExpenses = await deps.findOverdueExpenses(params.overdueDays);
+  const highValueExpenses = await deps.findHighValueExpenses(params.threshold);
+
+  return buildReport({ overdueExpenses, highValueExpenses });
+}
+```
+
+#### Migration Strategy
+
+If you start with direct query injection and later decide you need more abstraction:
+
+1. **Identify patterns**: Look for repeated or complex queries across your codebase
+2. **Extract incrementally**: Start by wrapping the most complex or frequently used queries
+3. **Maintain backwards compatibility**: Keep direct injection available for simple cases
+4. **Update gradually**: Migrate business logic to use wrapped queries over time
+
+The key insight is that **abstraction should earn its keep**. Don't wrap queries just because you can - wrap them when the abstraction provides real value through reusability, testability, or reduced complexity. Simple queries that appear once might be better left as direct injections, while complex business-critical queries often benefit from careful abstraction.
+
+Remember: **premature abstraction can be just as problematic as inadequate abstraction**. Start simple, identify patterns, and abstract when the value is clear.
