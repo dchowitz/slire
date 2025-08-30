@@ -1183,7 +1183,11 @@ const veryExpensiveTravel = await findExpensesBySpec(
 );
 ```
 
-- point out that spec factories can be made arbitrary complex - for example they could reach out to external data async to collect everything necessary to build the spec (feature flags, A/B testing toggles, current user) - or they keep internal state that gets changed with each `toFilter` invocation (pagination is a bad example for server-side code, any idea?) - however, try to contain complexity and put only logic into spec factories that is immanent
+**Advanced specification complexity:** Specification factories can become arbitrarily complex when business requirements demand it. They might reach out to external systems asynchronously to collect all necessary data for building the specification - feature flags, A/B testing configurations, current user permissions, or dynamic business rules. For example, a specification might query a configuration service to determine which fields are accessible to the current user's role, or check experiment settings to decide between different filtering strategies.
+
+Specifications can also maintain internal state that evolves with each `toFilter()` invocation. Examples include rate-limiting counters that progressively tighten filters as system load increases, statistical sampling that rotates through different subsets of data, or query performance tracking that adapts filtering strategies based on execution metrics. However, this stateful approach should be used sparingly as it makes specifications less predictable and harder to test.
+
+The key principle is to contain complexity and include only logic that is truly immanent to the query specification itself. External concerns like user authentication, system configuration, or performance monitoring often belong in separate layers rather than being embedded within specification factories. Keep specifications focused on expressing business query logic rather than orchestrating complex system interactions.
 
 - point out that injecting smth like `findExpensesBySpec` into business logic functions is basically the same as injection the pure, more-direct `find` function as the business logic can query whatever it wants by building specs ad-hoc. so consider wrapping findBySpec(specX) into named queries as well or provide a spec registry/factory to choose from
 
