@@ -1032,11 +1032,9 @@ Drawbacks:
 - Testing complexity - tests must understand query structure
 - Change impact - database schema changes ripple into business logic
 
-#### Query Wrapping Patterns
+The next sections explore several patterns that can abstract queries behind more semantic interfaces.
 
-Several patterns can abstract queries behind more semantic interfaces:
-
-##### Named Query Functions
+#### Named Query Functions
 
 Create purpose-built functions that encapsulate specific query logic:
 
@@ -1090,7 +1088,7 @@ async function processOverdueExpenses(
 }
 ```
 
-##### Query Specifications
+#### Query Specifications
 
 For more complex scenarios, consider the specification pattern:
 
@@ -1156,7 +1154,7 @@ async function findExpensesBySpec(
 }
 ```
 
-##### Repository Extension
+#### Repository Extension
 
 Another approach is extending your repository with domain-specific methods:
 
