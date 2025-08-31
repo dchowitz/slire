@@ -245,6 +245,8 @@ Finally, if you've been using `DocumentService` for most of your data access, yo
 The operations listed here resemble the full set of DB-agnostic functions in a SmartRepo. At time of writing only the MongoDB implementation existed. So some descriptions might mention some characteristics specific to MongoDB. However, the interface is designed to
 be as simple as possible to allow being implemented for other DBs, particularly Firestore.
 
+- TODO: section to explain API design decisions
+
 **Note 1**: In the function signatures below, `T` represents the entity type.
 
 **Note 2**: All read functions support projections. A projection is given in the form `{ propA: true, propB: true }` where `propA` and `propB` are valid properties in `T`. A projection is properly reflected in the return type.
@@ -553,7 +555,6 @@ await handler({ process: processor.processExpense.bind(processor), otherDep: ...
 
 TODOs:
 
-- consider adapter type for data access (and consequently a factory)
 - big factory as alternative for purpose-built adapters
 
 ### Explicit Dependencies
