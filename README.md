@@ -14,7 +14,9 @@
   - [delete](#delete)
   - [deleteMany](#deletemany)
   - [find](#find)
+  - [findBySpec](#findbyspec)
   - [count](#count)
+  - [countBySpec](#countbyspec)
 - [MongoDB Implementation](#mongodb-implementation)
   - [createSmartMongoRepo](#createsmartmongorepo)
   - [withSession](#withsession)
@@ -323,11 +325,25 @@ Queries entities based on the provided filter criteria. The filter uses a subset
 
 Note that the signature may change in the future to include parameters for limits and sort order, and a streaming version is also being considered.
 
+### findBySpec
+
+`findBySpec<S extends Specification<T>>(spec: S): Promise<T[]>`
+
+`findBySpec<S extends Specification<T>, P extends Projection<T>>(spec: S, projection: P): Promise<Projected<T, P>[]>`
+
+Queries entities using a specification object that encapsulates filter criteria and business rules. The repository automatically applies scope filtering and soft delete exclusion just like `find`. Specifications provide composable, reusable query logic that can be combined using `combineSpecs`. When using the projection variant, only the specified fields are returned and the result is properly typed. See [Query Abstraction Patterns](#query-abstraction-patterns) for detailed examples and patterns.
+
 ### count
 
 `count(filter: Partial<T>): Promise<number>`
 
 Returns the number of entities that match the provided filter criteria. Like `find`, the repository automatically applies scope filtering in addition to the user-provided filter, and soft-deleted entities are automatically excluded from the count if soft delete is enabled. Returns 0 if no matching entities are found.
+
+### countBySpec
+
+`countBySpec<S extends Specification<T>>(spec: S): Promise<number>`
+
+Returns the number of entities that match the provided specification. Like `count`, the repository automatically applies scope filtering and soft delete exclusion. This method works with the same specification objects used by `findBySpec`, enabling consistent query logic across find and count operations. Returns 0 if no matching entities are found.
 
 ## MongoDB Implementation
 
