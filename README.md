@@ -38,6 +38,8 @@
   - [Client-Side Stored Procedures](#client-side-stored-procedures)
   - [Query Abstraction Patterns](#query-abstraction-patterns)
   - [Putting It All Together](#putting-it-all-together)
+    - [HTTP Request Handlers](#http-request-handlers)
+    - [Background Jobs and Scripts](#background-jobs-and-scripts)
 
 ---
 
@@ -1322,38 +1324,96 @@ If you start with direct query injection and later need more abstraction, identi
 
 ## Putting It All Together
 
-The patterns discussed so far - repository factories, specialized data access functions, client-side stored procedures, and query abstractions - work best when integrated into a cohesive data access architecture. Most business applications follow predictable patterns that create natural integration points for data access:
+The patterns discussed so far - repository factories, specialized data access functions, client-side stored procedures, and query abstractions - work best when integrated into a cohesive data access architecture. Most business applications follow predictable patterns that create natural integration points for data access.
 
-**HTTP Request Handlers** follow a consistent structure:
+### HTTP Request Handlers
+
+HTTP request handlers follow a consistent structure, but the approach evolves based on complexity.
+
+**Simple case** - no authorization, direct business logic:
 
 ```typescript
-async function handleExpenseUpdate(req: Request, res: Response) {
-  // 1. Validate payload and extract auth context
-  const { organizationId, userId } = validateAuth(req);
+async function handleSimpleExpenseUpdate(req: Request, res: Response) {
+  // 1. Validate payload and extract context
+  const { organizationId } = validateAuth(req);
   const expenseData = validatePayload(req.body);
   const logger = createLogger(req);
 
-  // 2. Authorization check (typically done at handler level)
-  if (!canUserEditExpense(userId, expenseData.expenseId)) {
-    return res.status(403).json({ error: 'Not authorized' });
-  }
-
-  // 3. Instantiate data access
+  // 2. Instantiate data access and call business logic
   const dataAccess = createDataAccess({ organizationId, logger });
-
-  // 4. Call business logic, injecting focused data access methods
   const result = await updateExpenseWorkflow(expenseData, {
-    getExpenseById: dataAccess.expenses.getExpenseById,
     updateExpense: dataAccess.expenses.repo.update,
     recalculateTrip: dataAccess.trips.recalculateTotals,
   });
 
-  // 5. Respond with result
   res.json(result);
 }
 ```
 
-**Background Jobs and Scripts** share similar needs:
+**With authorization** - reveals data access duplication issues:
+
+```typescript
+async function handleExpenseUpdateWithAuth(req: Request, res: Response) {
+  const { organizationId, userId } = validateAuth(req);
+  const expenseData = validatePayload(req.body);
+  const logger = createLogger(req);
+  const dataAccess = createDataAccess({ organizationId, logger });
+
+  // Problem: Authorization needs expense data
+  await checkCanWriteExpense(userId, expenseData.expenseId, {
+    getExpenseById: dataAccess.expenses.getExpenseById, // Fetch #1
+  });
+
+  // Problem: Business logic may also need the same expense data
+  const result = await updateExpenseWorkflow(expenseData, {
+    getExpenseById: dataAccess.expenses.getExpenseById, // Potential fetch #2
+    updateExpense: dataAccess.expenses.repo.update,
+    recalculateTrip: dataAccess.trips.recalculateTotals,
+  });
+
+  res.json(result);
+}
+```
+
+Furthermore, the approach shown in the example reveals a **leaky abstraction problem**: the function `checkCanWriteExpense` receives both the data identifier (`expenseId`) and the method to fetch that data (`getExpenseById`), creating awkward coupling. The authorization function shouldn't need to know how to fetch expenses - it should work with the data directly.
+
+**Refined approach** - strategic prefetching and mixed injection:
+
+```typescript
+async function handleExpenseUpdate(req: Request, res: Response) {
+  const { organizationId, userId } = validateAuth(req);
+  const expenseData = validatePayload(req.body);
+  const logger = createLogger(req);
+  const dataAccess = createDataAccess({ organizationId, logger });
+
+  // Strategic prefetch: Get data needed by multiple operations
+  const expense =
+    (await dataAccess.expenses.getExpenseById(expenseData.expenseId)) ??
+    throwNotFound();
+
+  // Clean authorization: Pass actual data, not data access
+  await checkCanWriteExpense(userId, expense);
+
+  // Business logic: Mix prefetched data with data access methods
+  const result = await updateExpenseWorkflow(expenseData, expense, {
+    updateExpense: dataAccess.expenses.repo.update,
+    recalculateTrip: dataAccess.trips.recalculateTotals,
+    getUserPreferences: dataAccess.users.getPreferences, // Only when needed
+  });
+
+  res.json(result);
+}
+```
+
+The evolution shows key trade-offs: **pure dependency injection** (middle example) keeps functions testable but can cause data duplication, while **strategic prefetching** (final example) optimizes performance but couples the handler to specific data needs. Apply what makes sense - prefetch data at the handler level when multiple operations need the same entities, and inject data access methods for operations that need fresh or different data.
+
+Alternative approaches like **internal caching** in the data access factory can solve duplication transparently, but introduce implicit behavior and potential side-effects that may not be obvious to all developers. The explicit prefetching approach trades some handler complexity for predictable, transparent behavior.
+
+### Background Jobs and Scripts
+
+Background jobs, scripts, and other operational tasks typically have simpler authorization requirements but often need more complex data coordination:
+
+**Simple batch processing:**
 
 ```typescript
 async function runMigrationJob(organizationId: string) {
@@ -1368,7 +1428,7 @@ async function runMigrationJob(organizationId: string) {
 }
 ```
 
-**Transaction-Heavy Operations** require coordinated data access:
+**Transaction-heavy operations** require coordinated data access:
 
 ```typescript
 async function processComplexUpdate(updateData: any) {
@@ -1383,7 +1443,30 @@ async function processComplexUpdate(updateData: any) {
 }
 ```
 
-This consistent pattern - _instantiate data access, inject specific methods into business logic_ - creates a natural place to organize all the patterns we've discussed. Note that authorization typically happens at the handler level since it depends on the specific operation being performed. Alternatively, you can pass authenticated user context to the data access factory if your architecture prefers to handle authorization within data access layers, though this is less common as it couples data access to authorization logic.
+**Mixed approach** for complex operational workflows:
+
+```typescript
+async function reconcileExpenseData(organizationId: string) {
+  const logger = createJobLogger();
+  const dataAccess = createDataAccess({ organizationId, logger });
+
+  // Prefetch organizational configuration
+  const orgConfig = await dataAccess.organizations.getConfiguration();
+
+  // Process in transaction-aware batches
+  await dataAccess.expenses.repo.runTransaction(async (session) => {
+    const txDataAccess = createDataAccess({ organizationId, logger, session });
+
+    await reconcileExpenseWorkflow(orgConfig, {
+      findInconsistentExpenses: txDataAccess.expenses.findInconsistent,
+      updateExpenseStatus: txDataAccess.expenses.repo.update,
+      createAuditLog: txDataAccess.audit.logReconciliation,
+    });
+  });
+}
+```
+
+This consistent pattern - _instantiate data access, inject specific methods into business logic_ - creates a natural place to organize all the patterns we've discussed.
 
 The question becomes: how do we structure that data access instantiation to scale across multiple domains, teams, and usage contexts?
 
