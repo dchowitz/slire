@@ -1324,6 +1324,8 @@ If you start with direct query injection and later need more abstraction, identi
 
 The patterns discussed so far - repository factories, specialized data access functions, client-side stored procedures, and query abstractions - work best when integrated into a cohesive data access architecture. Most business applications follow predictable patterns that create natural integration points for data access.
 
+This chapter addresses two key questions: **how to structure** the application-level integration of these patterns (HTTP handlers, background jobs, transaction coordination), and **where to draw architectural boundaries** - what belongs in a general-purpose data access factory versus what should be instantiated on-demand for specialized operations. Understanding these boundaries is crucial for keeping data access factories focused and maintainable while still enabling proper composition of complex operations.
+
 ### HTTP Request Handlers
 
 HTTP request handlers follow a consistent structure, but the approach evolves based on complexity.
@@ -1421,28 +1423,61 @@ Alternative approaches like **internal caching** in the data access factory can 
 
 ### Background Jobs and Scripts
 
-Background jobs, scripts, and other operational tasks typically have simpler authorization requirements but often need more complex data coordination.
+Background jobs, scripts, and other operational tasks typically run without user-based authorization concerns since they operate with system privileges rather than on behalf of individual users. However, they often need more complex data coordination and raise important questions about **what belongs in a data access factory** versus what should be instantiated on-demand.
 
-TODOs
+**Architectural boundaries**: The data access factory should provide **reusable building blocks** (repositories, common queries, cross-cutting procedures) rather than every possible operation. One-off migrations, specialized batch jobs, and narrow-purpose procedures often don't belong in the general factory - they can consume the factory's building blocks without being part of it.
 
-- mention cross-scope (org) operations
-- backups?
-- transactions
-
-**Simple batch processing:**
+**Building blocks from factory:**
 
 ```typescript
-async function runMigrationJob(organizationId: string) {
+async function runExpenseReprocessingJob(organizationId: string) {
   const logger = createJobLogger();
   const dataAccess = createDataAccess({ organizationId, logger });
 
-  // Client-side stored procedure handles complex workflow
-  await dataAccess.bulk.migrateExpenseCategories({
-    batchSize: 1000,
-    dryRun: false,
+  // Use factory's building blocks: repositories and reusable procedures
+  await dataAccess.expenses.reprocessReceiptDigitization({
+    batchSize: 100,
+    retryFailures: true,
   });
 }
 ```
+
+**On-demand specialized operations:**
+
+```typescript
+async function runCategoryMigrationScript(organizationId: string) {
+  const logger = createJobLogger();
+  const dataAccess = createDataAccess({ organizationId, logger });
+
+  // One-off migration: instantiate separately, use factory's building blocks
+  const migration = createCategoryMigration({
+    expenseRepo: dataAccess.expenses.repo,
+    tagRepo: dataAccess.tags.repo,
+    findExpensesByCategory: dataAccess.expenses.findByCategory,
+    logger,
+  });
+
+  await migration.execute({ dryRun: false, batchSize: 1000 });
+}
+```
+
+**Where to draw the line:**
+
+**Include in data access factory:**
+
+- Repositories and basic CRUD operations
+- Reusable specialized data access functions (used across multiple contexts)
+- Client-side stored procedures with broad applicability
+- Cross-cutting concerns (auditing, bulk operations, common queries)
+
+**Instantiate on-demand:**
+
+- One-off migration scripts
+- Job-specific batch processing logic
+- Narrow-purpose procedures serving single use cases
+- Operations that combine multiple domains in unique ways
+
+Note that on-demand operations can still leverage dependency injection and testing patterns - they just don't clutter the general-purpose factory. For heavily database-focused operations, integration testing is often more valuable than unit testing anyway.
 
 **Transaction-heavy operations** require coordinated data access:
 
