@@ -1341,6 +1341,7 @@ async function handleSimpleExpenseUpdate(req: Request, res: Response) {
   const dataAccess = createDataAccess({ organizationId, logger });
   const result = await updateExpenseWorkflow(
     {
+      getExpenseById: dataAccess.expenses.getExpenseById,
       updateExpense: dataAccess.expenses.repo.update,
       recalculateTrip: dataAccess.trips.recalculateTotals,
     },
@@ -1382,7 +1383,7 @@ async function handleExpenseUpdateWithAuth(req: Request, res: Response) {
 }
 ```
 
-Furthermore, the approach shown in the example reveals a **leaky abstraction problem**: the function `checkCanWriteExpense` receives both the data identifier (`expenseId`) and the method to fetch that data (`getExpenseById`), creating awkward coupling. The authorization function shouldn't need to know how to fetch expenses - it should work with the data directly.
+Furthermore, this example reveals a **leaky abstraction problem**: the function `checkCanWriteExpense` receives both the data identifier (`expenseId`) and the method to fetch that data (`getExpenseById`), creating awkward coupling. The authorization function shouldn't need to know how to fetch expenses - it should work with the data directly.
 
 **Refined approach** - strategic prefetching and mixed injection:
 
