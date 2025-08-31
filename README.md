@@ -37,7 +37,8 @@
   - [Business Logic with Transactions](#business-logic-with-transactions)
   - [Client-Side Stored Procedures](#client-side-stored-procedures)
   - [Query Abstraction Patterns](#query-abstraction-patterns)
-  - [Putting It All Together](#putting-it-all-together)
+  - [A Factory to Rule Them All?](#a-factory-to-rule-them-all)
+  - [Application-Level Integration](#application-level-integration)
 
 ---
 
@@ -1320,211 +1321,15 @@ Don't feel constrained to choose one pattern universally. Consider mixing approa
 
 If you start with direct query injection and later need more abstraction, identify patterns in your codebase and extract incrementally, starting with the most complex or frequently used queries. Maintain backwards compatibility and migrate gradually. The key insight is that abstraction should earn its keep - wrap queries when they provide real value through reusability, testability, or reduced complexity, not just because you can. Premature abstraction can be just as problematic as inadequate abstraction, so start simple, identify patterns, and abstract when the value is clear.
 
-## Putting It All Together
+## A Factory to Rule Them All?
 
-The patterns discussed so far - repository factories, specialized data access functions, client-side stored procedures, and query abstractions - work best when integrated into a cohesive data access architecture. Most business applications follow predictable patterns that create natural integration points for data access.
+The patterns discussed so far - repository factories, specialized data access functions, client-side stored procedures, and query abstractions - work best when integrated into a cohesive data access architecture. But this raises a fundamental question: should you create one comprehensive data access factory that provides everything, or organize things differently?
 
-This chapter addresses two key questions: **how to structure** the application-level integration of these patterns (HTTP handlers, background jobs, transaction coordination), and **where to draw architectural boundaries** - what belongs in a general-purpose data access factory versus what should be instantiated on-demand for specialized operations. Understanding these boundaries is crucial for keeping data access factories focused and maintainable while still enabling proper composition of complex operations.
+This chapter addresses the architectural decisions around data access factories: **what belongs in them**, **what doesn't**, and **how to organize them effectively**. Understanding these boundaries is crucial for keeping data access factories focused and maintainable while still enabling proper composition of complex operations.
 
-### HTTP Request Handlers
+### What Belongs in a Data Access Factory?
 
-HTTP request handlers follow a consistent structure, but the approach evolves based on complexity.
-
-**Simple case** - no authorization, direct business logic:
-
-```typescript
-async function handleSimpleExpenseUpdate(req: Request, res: Response) {
-  // 1. Validate payload and extract context
-  const { organizationId } = validateAuth(req);
-  const expenseData = validatePayload(req.body);
-  const logger = createLogger(req);
-
-  // 2. Instantiate data access and call business logic
-  const dataAccess = createDataAccess({ organizationId, logger });
-  const result = await processExpenseUpdate(
-    {
-      getExpenseById: dataAccess.expenses.getExpenseById,
-      updateExpense: dataAccess.expenses.repo.update,
-    },
-    { expenseData }
-  );
-
-  res.json(result);
-}
-```
-
-**With authorization** - reveals data access duplication issues:
-
-```typescript
-async function handleExpenseUpdateWithAuth(req: Request, res: Response) {
-  const { organizationId, userId } = validateAuth(req);
-  const expenseData = validatePayload(req.body);
-  const logger = createLogger(req);
-  const dataAccess = createDataAccess({ organizationId, logger });
-
-  // Problem: Authorization needs expense data
-  await checkCanWriteExpense(
-    {
-      getExpenseById: dataAccess.expenses.getExpenseById, // Fetch #1
-    },
-    { userId, expenseId: expenseData.expenseId }
-  );
-
-  // Problem: Business logic may also need the same expense data
-  const result = await processExpenseUpdate(
-    {
-      getExpenseById: dataAccess.expenses.getExpenseById, // Potential fetch #2
-      updateExpense: dataAccess.expenses.repo.update,
-    },
-    { expenseData }
-  );
-
-  res.json(result);
-}
-```
-
-Furthermore, this example reveals a **leaky abstraction problem**: the function `checkCanWriteExpense` receives both the data identifier (`expenseId`) and the method to fetch that data (`getExpenseById`), creating awkward coupling. The authorization function shouldn't need to know how to fetch expenses - it should work with the data directly.
-
-**Refined approach** - strategic prefetching and mixed injection:
-
-```typescript
-async function handleExpenseUpdate(req: Request, res: Response) {
-  const { organizationId, userId } = validateAuth(req);
-  const expenseData = validatePayload(req.body);
-  const logger = createLogger(req);
-  const dataAccess = createDataAccess({ organizationId, logger });
-
-  // Strategic prefetch: Get data needed by multiple operations
-  const expense =
-    (await dataAccess.expenses.getExpenseById(expenseData.expenseId)) ??
-    throwNotFound();
-
-  // Clean authorization: Pass actual data, not data access
-  await checkCanWriteExpense({ userId, expense });
-
-  // Business logic: Clean dependency injection with prefetched data
-  const result = await processExpenseUpdate(
-    {
-      updateExpense: dataAccess.expenses.repo.update,
-    },
-    { expenseData, expense }
-  );
-
-  res.json(result);
-}
-```
-
-The evolution sketched here shows key trade-offs: **pure dependency injection** (middle example) keeps functions testable but can cause data duplication, while **strategic prefetching** (final example) optimizes performance but couples the handler to specific data needs. Apply what makes sense - prefetch data at the handler level when multiple operations need the same entities, and inject data access methods for operations that need fresh or different data.
-
-Alternative approaches like **internal caching** in the data access factory can solve duplication transparently, but introduce implicit behavior and potential side-effects that may not be obvious to all developers. The explicit prefetching approach trades some handler complexity for predictable, transparent behavior.
-
-**Composing multiple business operations** - as a final example, imagine we have a more complex expense update logic that also needs to recalculate trip totals and potentially notify managers. Rather than handling all orchestration at the handler level, we can push the business orchestration down into the workflow function while keeping the handler focused on request/response concerns and dependency wiring:
-
-```typescript
-async function handleComplexExpenseUpdate(req: Request, res: Response) {
-  const { organizationId, userId } = validateAuth(req);
-  const expenseData = validatePayload(req.body);
-  const logger = createLogger(req);
-  const dataAccess = createDataAccess({ organizationId, logger });
-
-  // Prefetch data needed for authorization and business logic
-  const expense =
-    (await dataAccess.expenses.getExpenseById(expenseData.expenseId)) ??
-    throwNotFound();
-  await checkCanWriteExpense({ userId, expense });
-
-  // Create business functions that close over their data access needs
-  const recalculateTrip = partial(recalculateTripTotals, {
-    findExpensesByTrip: dataAccess.expenses.findByTripId,
-    updateTrip: dataAccess.trips.repo.update,
-  });
-
-  const notifyManager = partial(notifyExpenseUpdate, {
-    getUserById: dataAccess.users.getById,
-    sendEmail: dataAccess.notifications.sendEmail,
-  });
-
-  // Business orchestration handled by the workflow function
-  const result = await processExpenseUpdate(
-    {
-      updateExpense: dataAccess.expenses.repo.update,
-      recalculateTrip,
-      notifyManager,
-    },
-    { expenseData, expense, userId }
-  );
-
-  res.json(result);
-}
-```
-
-This approach keeps the handler focused on request lifecycle concerns (validation, authorization, response) while pushing business orchestration logic into `processExpenseUpdate`. The business process function receives business capabilities as dependencies, not raw data access methods, creating cleaner separation of concerns.
-
-### Background Jobs and Scripts
-
-Background jobs, scripts, and other operational tasks typically run without user-based authorization concerns since they operate with system privileges rather than on behalf of individual users. However, they often need more complex data coordination and raise important questions about **what belongs in a data access factory** versus what should be instantiated on-demand.
-
-**Architectural boundaries**: The data access factory should provide **reusable building blocks** (repositories, common queries, cross-cutting procedures) rather than every possible operation. One-off migrations, specialized batch jobs, and narrow-purpose procedures often don't belong in it - they can consume the factory's building blocks without being part of it.
-
-Like HTTP handlers, background jobs and scripts follow the same pattern of instantiating the data access factory to get their needed building blocks. The main difference is that they typically have less complex business logic and interact more directly with the provided repositories and queries, often performing straightforward data processing tasks without the layered dependency injection patterns seen in handlers.
-
-Direct use of building blocks from factory (DB-agnostic):
-
-```typescript
-async function runExpenseCleanupJob(organizationId: string) {
-  const logger = createJobLogger();
-  const repo = createDataAccess({ organizationId, logger }).expenses.repo;
-
-  // DB-agnostic deletion (2 roundtrips)
-  const staleExpenses = await repo.findBySpec(staleSpec, { id: true });
-  await repo.deleteMany(staleExpenses.map((e) => e.id)); // SmartRepo's only operates on IDs
-
-  logger.info(`Cleaned up ${staleExpenses.length} stale expenses`);
-}
-```
-
-While this example uses clean, testable interfaces, it requires two database roundtrips - one to find matching records, another to delete them by ID. For performance-critical batch operations, this overhead can be improved by bypassing the DB-agnostic interface and using database-specific optimizations.
-
-Skip data access factory and instantiate repository to get access to native features:
-
-```typescript
-async function runExpenseCleanupJobOptimized(organizationId: string) {
-  const logger = createJobLogger();
-  const mongoClient = getMongoClient(); // alternatively, pass the client as dependency
-
-  // Access repository factory directly for MongoDB-specific operations
-  const repo = createExpenseRepo(mongoClient, { organizationId });
-
-  // MongoDB-specific: efficient single deleteMany operation
-  const filter = repo.applyScopeForWrite(createStaleExpenseSpec(30).toFilter());
-  const result = await repo.collection.deleteMany(filter);
-
-  logger.info(`Cleaned up ${result.deletedCount} stale expenses`);
-}
-```
-
-The two approaches illustrate key **architectural tradeoffs**: the data access factory provides convenient, testable building blocks with DB-agnostic interfaces, but sometimes you need direct repository access for performance-critical operations. This is why having access to **both** the data access factory and underlying repository factories can be valuable - use the factory for most operations, but bypass it when you need DB-specific optimizations or advanced features not exposed through the abstract interface. The same considerations apply to [client-side stored procedures](#client-side-stored-procedures) - simpler ones can leverage factory building blocks, while complex procedures may need direct repository access for optimal performance.
-
-**Complex workflows instantiated on-demand:**
-
-```typescript
-async function runReceiptReprocessingJob(organizationId: string) {
-  const logger = createJobLogger();
-  const dataAccess = createDataAccess({ organizationId, logger });
-
-  // Complex workflow: instantiate separately, use factory's building blocks
-  const reprocessor = createReceiptReprocessor({
-    expenseRepo: dataAccess.expenses.repo,
-    findFailedReceipts: dataAccess.expenses.findFailedReceipts,
-    updateReceiptStatus: dataAccess.expenses.updateReceiptStatus,
-    logger,
-  });
-
-  await reprocessor.execute({ batchSize: 100, retryFailures: true });
-}
-```
-
-**Where to draw the line:**
+The data access factory should provide **reusable building blocks** (repositories, common queries, cross-cutting procedures) rather than every possible operation. One-off migrations, specialized batch jobs, and narrow-purpose procedures often don't belong in it - they can consume the factory's building blocks without being part of it.
 
 **Include in data access factory:**
 
@@ -1542,51 +1347,11 @@ async function runReceiptReprocessingJob(organizationId: string) {
 
 Note that on-demand operations can still leverage dependency injection and testing patterns - they just don't clutter the general-purpose factory. For heavily database-focused operations, integration testing is often more valuable than unit testing anyway.
 
-**Transaction-heavy operations** require coordinated data access:
+The key insight is that data access factories work best when they provide **building blocks** that can be composed into larger operations, rather than trying to contain every conceivable operation. This keeps the factory focused, maintainable, and prevents it from becoming an unwieldy "god object" that grows indefinitely.
 
-```typescript
-async function processComplexUpdate(updateData: any) {
-  const dataAccess = createDataAccess(baseContext);
+### How to Organize Data Access Factories
 
-  await dataAccess.expenses.repo.runTransaction(async (session) => {
-    const txDataAccess = createDataAccess({ ...baseContext, session });
-
-    // Multiple operations coordinated within transaction
-    await coordinatedBusinessLogic(updateData, txDataAccess);
-  });
-}
-```
-
-**Mixed approach** for complex operational workflows:
-
-```typescript
-async function reconcileExpenseData(organizationId: string) {
-  const logger = createJobLogger();
-  const dataAccess = createDataAccess({ organizationId, logger });
-
-  // Prefetch organizational configuration
-  const orgConfig = await dataAccess.organizations.getConfiguration();
-
-  // Process in transaction-aware batches
-  await dataAccess.expenses.repo.runTransaction(async (session) => {
-    const txDataAccess = createDataAccess({ organizationId, logger, session });
-
-    await reconcileExpenseWorkflow(orgConfig, {
-      findInconsistentExpenses: txDataAccess.expenses.findInconsistent,
-      updateExpenseStatus: txDataAccess.expenses.repo.update,
-      createAuditLog: txDataAccess.audit.logReconciliation,
-    });
-  });
-}
-```
-
-This consistent pattern - _instantiate data access, inject specific methods into business logic_ - creates a natural place to organize all the patterns we've discussed.
-
-The question becomes: how do we structure that data access instantiation to scale across multiple domains, teams, and usage contexts?
-
-### Architectural Approaches
-
-Two main approaches emerge for organizing data access at scale:
+Once you've decided what belongs in your data access factory, the question becomes: how do you structure that factory to scale across multiple domains, teams, and usage contexts? Two main approaches emerge for organizing data access at scale:
 
 #### The Unified Data Access Factory
 
@@ -1929,3 +1694,209 @@ Even with a unified factory, avoid the god class antipattern by:
 The question of whether external services (like mapping APIs, email services) belong in data access factories depends on your architecture goals. Consider separating them into distinct "service access" factories if they have different lifecycle, configuration, or error handling requirements than database operations.
 
 Both architectures benefit from the same core principles: dependency injection, explicit contracts, composable functions, and clear separation of concerns. Choose the approach that matches your team structure, application complexity, and long-term architectural goals, and don't hesitate to evolve from one approach to another as your needs change.
+
+## Application-Level Integration
+
+Once you've designed your data access architecture, the next question is how to integrate these patterns into real applications. This chapter covers practical usage patterns for HTTP request handlers, background jobs, and other application contexts, showing how the data access building blocks come together in practice.
+
+### HTTP Request Handlers
+
+HTTP request handlers follow a consistent structure, but the approach evolves based on complexity.
+
+**Simple case** - no authorization, direct business logic:
+
+```typescript
+async function handleSimpleExpenseUpdate(req: Request, res: Response) {
+  // 1. Validate payload and extract context
+  const { organizationId } = validateAuth(req);
+  const expenseData = validatePayload(req.body);
+  const logger = createLogger(req);
+
+  // 2. Instantiate data access and call business logic
+  const dataAccess = createDataAccess({ organizationId, logger });
+  const result = await processExpenseUpdate(
+    {
+      getExpenseById: dataAccess.expenses.getExpenseById,
+      updateExpense: dataAccess.expenses.repo.update,
+    },
+    { expenseData }
+  );
+
+  res.json(result);
+}
+```
+
+**With authorization** - reveals data access duplication issues:
+
+```typescript
+async function handleExpenseUpdateWithAuth(req: Request, res: Response) {
+  const { organizationId, userId } = validateAuth(req);
+  const expenseData = validatePayload(req.body);
+  const logger = createLogger(req);
+  const dataAccess = createDataAccess({ organizationId, logger });
+
+  // Problem: Authorization needs expense data
+  await checkCanWriteExpense(
+    {
+      getExpenseById: dataAccess.expenses.getExpenseById, // Fetch #1
+    },
+    { userId, expenseId: expenseData.expenseId }
+  );
+
+  // Problem: Business logic may also need the same expense data
+  const result = await processExpenseUpdate(
+    {
+      getExpenseById: dataAccess.expenses.getExpenseById, // Potential fetch #2
+      updateExpense: dataAccess.expenses.repo.update,
+    },
+    { expenseData }
+  );
+
+  res.json(result);
+}
+```
+
+Furthermore, this example reveals a **leaky abstraction problem**: the function `checkCanWriteExpense` receives both the data identifier (`expenseId`) and the method to fetch that data (`getExpenseById`), creating awkward coupling. The authorization function shouldn't need to know how to fetch expenses - it should work with the data directly.
+
+**Refined approach** - strategic prefetching and mixed injection:
+
+```typescript
+async function handleExpenseUpdate(req: Request, res: Response) {
+  const { organizationId, userId } = validateAuth(req);
+  const expenseData = validatePayload(req.body);
+  const logger = createLogger(req);
+  const dataAccess = createDataAccess({ organizationId, logger });
+
+  // Strategic prefetch: Get data needed by multiple operations
+  const expense =
+    (await dataAccess.expenses.getExpenseById(expenseData.expenseId)) ??
+    throwNotFound();
+
+  // Clean authorization: Pass actual data, not data access
+  await checkCanWriteExpense({ userId, expense });
+
+  // Business logic: Clean dependency injection with prefetched data
+  const result = await processExpenseUpdate(
+    {
+      updateExpense: dataAccess.expenses.repo.update,
+    },
+    { expenseData, expense }
+  );
+
+  res.json(result);
+}
+```
+
+The evolution sketched here shows key trade-offs: **pure dependency injection** (middle example) keeps functions testable but can cause data duplication, while **strategic prefetching** (final example) optimizes performance but couples the handler to specific data needs. Apply what makes sense - prefetch data at the handler level when multiple operations need the same entities, and inject data access methods for operations that need fresh or different data.
+
+Alternative approaches like **internal caching** in the data access factory can solve duplication transparently, but introduce implicit behavior and potential side-effects that may not be obvious to all developers. The explicit prefetching approach trades some handler complexity for predictable, transparent behavior.
+
+**Composing multiple business operations** - as a final example, imagine we have a more complex expense update logic that also needs to recalculate trip totals and potentially notify managers. Rather than handling all orchestration at the handler level, we can push the business orchestration down into the workflow function while keeping the handler focused on request/response concerns and dependency wiring:
+
+```typescript
+async function handleComplexExpenseUpdate(req: Request, res: Response) {
+  const { organizationId, userId } = validateAuth(req);
+  const expenseData = validatePayload(req.body);
+  const logger = createLogger(req);
+  const dataAccess = createDataAccess({ organizationId, logger });
+
+  // Prefetch data needed for authorization and business logic
+  const expense =
+    (await dataAccess.expenses.getExpenseById(expenseData.expenseId)) ??
+    throwNotFound();
+  await checkCanWriteExpense({ userId, expense });
+
+  // Create business functions that close over their data access needs
+  const recalculateTrip = partial(recalculateTripTotals, {
+    findExpensesByTrip: dataAccess.expenses.findByTripId,
+    updateTrip: dataAccess.trips.repo.update,
+  });
+
+  const notifyManager = partial(notifyExpenseUpdate, {
+    getUserById: dataAccess.users.getById,
+    sendEmail: dataAccess.notifications.sendEmail,
+  });
+
+  // Business orchestration handled by the workflow function
+  const result = await processExpenseUpdate(
+    {
+      updateExpense: dataAccess.expenses.repo.update,
+      recalculateTrip,
+      notifyManager,
+    },
+    { expenseData, expense, userId }
+  );
+
+  res.json(result);
+}
+```
+
+This approach keeps the handler focused on request lifecycle concerns (validation, authorization, response) while pushing business orchestration logic into `processExpenseUpdate`. The business process function receives business capabilities as dependencies, not raw data access methods, creating cleaner separation of concerns.
+
+### Background Jobs and Scripts
+
+Background jobs, scripts, and other operational tasks typically run without user-based authorization concerns since they operate with system privileges rather than on behalf of individual users. However, they often need more complex data coordination and raise important questions about **what belongs in a data access factory** versus what should be instantiated on-demand.
+
+**Architectural boundaries**: The data access factory should provide **reusable building blocks** (repositories, common queries, cross-cutting procedures) rather than every possible operation. One-off migrations, specialized batch jobs, and narrow-purpose procedures often don't belong in it - they can consume the factory's building blocks without being part of it.
+
+Like HTTP handlers, background jobs and scripts follow the same pattern of instantiating the data access factory to get their needed building blocks. The main difference is that they typically have less complex business logic and interact more directly with the provided repositories and queries, often performing straightforward data processing tasks without the layered dependency injection patterns seen in handlers.
+
+Direct use of building blocks from factory (DB-agnostic):
+
+```typescript
+async function runExpenseCleanupJob(organizationId: string) {
+  const logger = createJobLogger();
+  const repo = createDataAccess({ organizationId, logger }).expenses.repo;
+
+  // DB-agnostic deletion (2 roundtrips)
+  const staleExpenses = await repo.findBySpec(createStaleExpenseSpec(30), {
+    id: true,
+  });
+  await repo.deleteMany(staleExpenses.map((e) => e.id));
+
+  logger.info(`Cleaned up ${staleExpenses.length} stale expenses`);
+}
+```
+
+While this example uses clean, testable interfaces, it requires two database roundtrips - one to find matching records, another to delete them by ID. For performance-critical batch operations, this overhead can be improved by bypassing the DB-agnostic interface and using database-specific optimizations.
+
+Skip data access factory and instantiate repository to get access to native features:
+
+```typescript
+async function runExpenseCleanupJobOptimized(organizationId: string) {
+  const logger = createJobLogger();
+  const mongoClient = getMongoClient();
+
+  // Access repository factory directly for MongoDB-specific operations
+  const repo = createExpenseRepo(mongoClient, { organizationId });
+
+  // MongoDB-specific: efficient single deleteMany operation
+  const filter = repo.applyScopeForWrite(createStaleExpenseSpec(30).toFilter());
+  const result = await repo.collection.deleteMany(filter);
+
+  logger.info(`Cleaned up ${result.deletedCount} stale expenses`);
+}
+```
+
+The two approaches illustrate key **architectural tradeoffs**: the data access factory provides convenient, testable building blocks with DB-agnostic interfaces, but sometimes you need direct repository access for performance-critical operations. This is why having access to **both** the data access factory and underlying repository factories can be valuable - use the factory for most operations, but bypass it when you need DB-specific optimizations or advanced features not exposed through the abstract interface. The same considerations apply to [client-side stored procedures](#client-side-stored-procedures) - simpler ones can leverage factory building blocks, while complex procedures may need direct repository access for optimal performance.
+
+**Complex workflows instantiated on-demand:**
+
+```typescript
+async function runReceiptReprocessingJob(organizationId: string) {
+  const logger = createJobLogger();
+  const dataAccess = createDataAccess({ organizationId, logger });
+
+  // Complex workflow: instantiate separately, use factory's building blocks
+  const reprocessor = createReceiptReprocessor({
+    expenseRepo: dataAccess.expenses.repo,
+    findFailedReceipts: dataAccess.expenses.findFailedReceipts,
+    updateReceiptStatus: dataAccess.expenses.updateReceiptStatus,
+    logger,
+  });
+
+  await reprocessor.execute({ batchSize: 100, retryFailures: true });
+}
+```
+
+The key insight is that background jobs benefit from the same architectural patterns - they use factory building blocks for common operations but can bypass the factory for performance-critical or database-specific operations when needed.
