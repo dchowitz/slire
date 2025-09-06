@@ -1335,8 +1335,7 @@ The data access factory should provide **reusable building blocks** (repositorie
 
 - Repositories and basic CRUD operations
 - Reusable specialized data access functions (used across multiple contexts)
-- Client-side stored procedures with broad applicability
-- Cross-cutting concerns (auditing, bulk operations, common queries)
+- Client-side stored procedures, bulk operations and common queries with broad applicability
 
 **Instantiate on-demand:**
 
@@ -1469,16 +1468,16 @@ export function createDataAccess(
 }
 ```
 
-**Whether or not to also pass a transaction sessions to the factory** depends on your preferences. The example above doesn't as it provides client-side stored procedures that manage their own transactions internally. Including a session parameter in the factory signature would lead to confusion about when an how transactions are being used as some operations would use the factory session while others would manage their own sessions.
+**Whether or not to pass a transaction session to the factory** is a design choice that depends on your application's needs. The example above omits session from the factory signature since it provides client-side stored procedures that manage their own transactions internally. Including a session parameter would create inconsistent behavior where some operations use the factory's session while others manage their own, leading to confusion about transaction boundaries.
+
+However, passing a session to the factory can be valuable when you need **application-level transaction coordination** - for example, when an HTTP request handler needs to ensure atomicity across multiple data access operations. The main benefits include simplified transaction management at the request level and guaranteed consistency when operations span multiple domains. But this approach carries significant risks: accidentally long-running transactions can degrade database performance, transaction timeouts become harder to manage, and debugging becomes more complex when transaction boundaries are implicit. Most importantly, it can encourage overuse of transactions in scenarios where they're not actually needed, leading to unnecessary contention and reduced system scalability.
 
 Since the main factory requires explicit dependencies and context, it's often helpful to create convenience factories that pre-configure common usage patterns. These wrapper functions encapsulate the repetitive setup for typical scenarios like HTTP requests, background scripts, or integration tests, making the data access factory easier to use across different parts of your application.
 
 ```typescript
 // Convenience factory for HTTP requests
-export function createDataAccessForRequest({
-  req,
-  logger,
-}: RequestContext): DataAccess {
+export function createDataAccessForRequest(req: express.Request): DataAccess {
+  const { logger } = enrichedRequest(req);
   return createDataAccess(
     {
       mongoClient: mongoClientSingleton(),
@@ -1507,6 +1506,8 @@ export function createDataAccessForTest(organizationId: string): DataAccess {
   );
 }
 ```
+
+TODO - convenience factories become really useful when we support tracability context
 
 ### Modular Theme-Oriented Factories
 
