@@ -32,7 +32,14 @@
   - [Client-Side Stored Procedures](#client-side-stored-procedures)
   - [Query Abstraction Patterns](#query-abstraction-patterns)
   - [A Factory to Rule Them All?](#a-factory-to-rule-them-all)
+  - [The Unified Data Access Factory](#the-unified-data-access-factory)
+  - [Modular Theme-Oriented Factories](#modular-theme-oriented-factories)
+  - [Avoiding the "God Class" Problem](#avoiding-the-god-class-problem)
+  - [Choosing a Factory Approach](#choosing-a-factory-approach)
+  - [Wait, What About My Data Access Adapters?](#wait-what-about-my-data-access-adapters)
   - [Application-Level Integration](#application-level-integration)
+  - [HTTP Request Handlers](#http-request-handlers)
+  - [Background Jobs and Scripts](#background-jobs-and-scripts)
 - [Addendum I - Pattern References (to be checked)](#addendum-i---pattern-references-to-be-checked)
 
 ---
@@ -1625,11 +1632,11 @@ This gives us discoverability (adapters are part of the factory interface), cont
 
 However, consider some potential concerns: including too many adapters can contribute to factory bloat and the "god class" problem, adapters can be quite specialized and tightly coupled to specific business workflows which may not warrant factory inclusion. Balance convenience with maintainability when deciding which adapters deserve a place in your factory.
 
-### Application-Level Integration
+## Application-Level Integration
 
 Once you've designed your data access architecture, the next question is how to integrate these patterns into real applications. This chapter covers practical usage patterns for HTTP request handlers, background jobs, and other application contexts, showing how the data access building blocks come together in practice.
 
-#### HTTP Request Handlers
+### HTTP Request Handlers
 
 HTTP request handlers follow a consistent structure, but the approach evolves based on complexity.
 
@@ -1763,7 +1770,7 @@ async function handleComplexExpenseUpdate(req: Request, res: Response) {
 
 This approach keeps the handler focused on request lifecycle concerns (validation, authorization, response) while pushing business orchestration logic into `processExpenseUpdate`. The business process function receives business capabilities as dependencies, not raw data access methods, creating cleaner separation of concerns.
 
-#### Background Jobs and Scripts
+### Background Jobs and Scripts
 
 Background jobs, scripts, and other operational tasks typically run without user-based authorization concerns since they operate with system privileges rather than on behalf of individual users. However, they often need more complex data coordination and raise important questions about what belongs in a data access factory versus what should be instantiated on-demand.
 

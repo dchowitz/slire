@@ -56,6 +56,7 @@ Convert collaborative "we" to:
 
 ### Table of Contents
 
+- Show all headings up to level 3 in the TOC (##, ###, but not ####)
 - Group related functions on single lines in the TOC separated by dashes
 - Example: `[getById](#getbyid) - [getByIds](#getbyids)` instead of separate bullet points
 - Maintains all navigation links while reducing visual clutter
