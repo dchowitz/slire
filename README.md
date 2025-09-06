@@ -30,6 +30,8 @@
   - [Export Repository Types](#export-repository-types)
   - [Always Use Helper Methods for Direct Collection Operations](#always-use-helper-methods-for-direct-collection-operations)
 - [Decoupling Business Logic from Data Access](#decoupling-business-logic-from-data-access)
+  - [Scope: Database Operations and Beyond](#scope-database-operations-and-beyond)
+  - [Principles for Decoupling](#principles-for-decoupling)
   - [Explicit Dependencies](#explicit-dependencies)
   - [Sandwich Method](#sandwich-method)
   - [Specialized Data Access Functions](#specialized-data-access-functions)
@@ -509,6 +511,14 @@ await repo.collection.updateMany(
 ```
 
 ## Decoupling Business Logic from Data Access
+
+### Scope: Database Operations and Beyond
+
+The architectural patterns and design principles discussed in this section focus primarily on **database operations** - repositories, queries, and data persistence patterns. However, these same principles are readily transferrable to other data-providing facilities like external APIs, file systems, caching layers, or message queues.
+
+When working with external services, consider organizing them into separate "service access" modules alongside your data access components. This separation maintains clear boundaries while allowing you to apply the same compositional patterns, dependency injection approaches, and testing strategies to both database operations and external service integrations.
+
+### Principles for Decoupling
 
 A fundamental principle of maintainable software design is keeping business logic independent from data access implementation. Injecting entire repository instances into business logic components creates tight coupling and obscures the actual data dependencies.
 
@@ -1570,6 +1580,17 @@ export function createComprehensiveDataAccess(
 }
 ```
 
+#### Avoiding the "God Class" Problem
+
+The modular approach naturally helps avoid the god class antipattern that can plague unified factories. By breaking functionality into focused, domain-specific modules, you get clear boundaries and separation of concerns. However, even if you prefer a unified interface, you can still apply internal modular organization:
+
+- Extract implementation modules: Keep the unified interface but implement each domain in separate files
+- Use composition: Build the factory by composing smaller, focused factory functions
+- Establish clear boundaries: Use TypeScript interfaces to enforce separation between domains
+- Separate concerns: Keep external service access (APIs, file systems) in distinct modules from database operations
+
+This way, you can have the convenience of a single entry point while maintaining the organizational benefits of modular design internally. Additionally, lazy initialization can help manage resource usage by only creating repositories and functions when first accessed, which is particularly useful for large unified factories.
+
 #### Choosing a Factory Approach
 
 The choice between unified and modular factories isn't binary - it depends on several contextual factors that often point in different directions leading to hybrid approaches providing both modular factories for focused use cases and comprehensive factories for broad access.
@@ -1591,22 +1612,6 @@ Practical Considerations:
 - Cross-domain operations frequency - common cross-domain workflows favor unified approaches
 - Configuration complexity - different per-domain needs (databases, external services) push toward modularity
 - Testing and dependency injection preferences may favor one approach over another
-
-Handling the "God Class" Problem:
-
-Even with a unified factory, avoid the god class antipattern by:
-
-- Extract implementation modules: Keep the interface unified but implement each domain in separate files
-- Use composition: Build the factory by composing smaller, focused factory functions
-- Lazy initialization: Only create repositories and functions when first accessed
-- Clear boundaries: Use TypeScript interfaces to enforce separation between domains
-- Separate concerns: Keep external service access (APIs, file systems) in separate modules from database access
-
-External Services Consideration:
-
-The question of whether external services (like mapping APIs, email services) belong in data access factories depends on your architecture goals. Consider separating them into distinct "service access" factories if they have different lifecycle, configuration, or error handling requirements than database operations.
-
-Both architectures benefit from the same core principles: dependency injection, explicit contracts, composable functions, and clear separation of concerns. Choose the approach that matches your team structure, application complexity, and long-term architectural goals, and don't hesitate to evolve from one approach to another as your needs change.
 
 ## Application-Level Integration
 
