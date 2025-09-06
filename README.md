@@ -40,6 +40,7 @@
   - [Client-Side Stored Procedures](#client-side-stored-procedures)
   - [Query Abstraction Patterns](#query-abstraction-patterns)
   - [A Factory to Rule Them All?](#a-factory-to-rule-them-all)
+    - [Wait! What About My Data Access Adapters?](#wait-what-about-my-data-access-adapters)
   - [Application-Level Integration](#application-level-integration)
 
 ---
@@ -564,10 +565,6 @@ await new ExpenseProcessor(createDeps()).processExpense(processInput());
 const processor = new ExpenseProcessor(createDeps());
 await handler({ process: processor.processExpense.bind(processor), otherDep: ...}, input());
 ```
-
-TODOs:
-
-- big factory as alternative for purpose-built adapters
 
 ### Explicit Dependencies
 
@@ -1612,6 +1609,29 @@ Practical Considerations:
 - Cross-domain operations frequency - common cross-domain workflows favor unified approaches
 - Configuration complexity - different per-domain needs (databases, external services) push toward modularity
 - Testing and dependency injection preferences may favor one approach over another
+
+#### Wait, What About My Data Access Adapters?
+
+The [data access adapters](#data-access-adapters) we discussed earlier that are used across multiple contexts (HTTP handlers, background jobs, different business workflows) are also candidates for inclusion in factories (regardless of unified or modular). Factories already manage the underlying repositories they depend on, and adapters often coordinate multiple repositories making them perfect for lazy creation.
+
+A simple example:
+
+```typescript
+export type DataAccess = {
+  expenses: { repo: ExpenseRepo /* ... */ };
+  trips: { repo: TripRepo /* ... */ };
+
+  // Adapter factories - lazy creation when needed
+  adapters: {
+    reimbursement: (options?: AdapterOptions) => ReimbursementDataAccess;
+    reporting: () => ReportingDataAccess;
+  };
+};
+```
+
+This gives us discoverability (adapters are part of the factory interface), controlled scope (factory decides which adapters are broadly useful), and efficiency (only created when actually needed). Just be mindful not to include every possible adapter - focus on those with broad applicability rather than highly specialized, single-use adapters.
+
+However, consider some potential concerns: including too many adapters can contribute to factory bloat and the "god class" problem, adapters can be quite specialized and tightly coupled to specific business workflows which may not warrant factory inclusion. Balance convenience with maintainability when deciding which adapters deserve a place in your factory.
 
 ## Application-Level Integration
 
