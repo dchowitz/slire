@@ -585,9 +585,9 @@ async function processExpense(
 
 Problems with this approach:
 
-- **Over-privileged access**: Function gets entire repository interface but only needs 2 methods
-- **Hidden dependencies**: Signature doesn't reveal which data operations are actually used
-- **Opaque testing**: Even comprehensive mocks don't clearly show which operations the function relies on
+- Over-privileged access: Function gets entire repository interface but only needs 2 methods
+- Hidden dependencies: Signature doesn't reveal which data operations are actually used
+- Opaque testing: Even comprehensive mocks don't clearly show which operations the function relies on
 
 Moreover, unit tests for business logic shouldn't need comprehensive, realistic repository mocks at all. The goal is to test the _business logic_, not data access patterns. Simple data mocks that provide exactly the input data needed for each test scenario are sufficient and often preferable - they're easier to set up and understand.
 
@@ -810,27 +810,27 @@ await processExpenseReimbursement(dataAccess, expenseId);
 
 Data access adapters are valuable when you need:
 
-- **Multi-repository operations**: Coordinating data from multiple sources (`getReimbursementData` fetches from both expense and user repos)
-- **Domain-specific validation**: Encapsulating business rules (`expense.status !== 'approved'` check)
-- **Complex error handling**: Standardizing error responses across different failure scenarios
-- **Transaction coordination**: Managing atomic operations across multiple repositories
-- **Data transformation**: Converting repository results into domain-specific shapes
-- **Consistent patterns**: Ensuring uniform approach to similar operations across your codebase
+- Multi-repository operations: Coordinating data from multiple sources (`getReimbursementData` fetches from both expense and user repos)
+- Domain-specific validation: Encapsulating business rules (`expense.status !== 'approved'` check)
+- Complex error handling: Standardizing error responses across different failure scenarios
+- Transaction coordination: Managing atomic operations across multiple repositories
+- Data transformation: Converting repository results into domain-specific shapes
+- Consistent patterns: Ensuring uniform approach to similar operations across your codebase
 
 Skip adapters for:
 
-- **Simple CRUD operations**: Direct repository calls like `repo.getById(id)` don't need wrapping
-- **Single-repository operations**: When business logic only touches one repository
-- **1:1 mappings**: When repository methods already match your domain needs perfectly
-- **Read-only operations**: Simple data fetching that doesn't require transformation or validation
+- Simple CRUD operations: Direct repository calls like `repo.getById(id)` don't need wrapping
+- Single-repository operations: When business logic only touches one repository
+- 1:1 mappings: When repository methods already match your domain needs perfectly
+- Read-only operations: Simple data fetching that doesn't require transformation or validation
 
-The key principle: **add adapters when they provide real value** through coordination, validation, transformation, or domain-specific logic. Avoid them for simple pass-through operations where they just add indirection without benefit.
+The key principle: add adapters when they provide real value through coordination, validation, transformation, or domain-specific logic. Avoid them for simple pass-through operations where they just add indirection without benefit.
 
 **Finding the right boundary**: Deciding what belongs in business logic versus what belongs in the adapter can be challenging. Consider `expense.status !== 'approved'` - is this a data access concern (filtering) or business logic (validation)? There's no universal answer. Generally:
 
-- **Put in adapters**: Data fetching patterns, cross-repository coordination, technical constraints (`status !== 'approved'` as a data filter)
-- **Put in business logic**: Domain rules, calculations, business decisions (`canBeReimbursed(expense, user)` as a business rule)
-- **Gray areas**: Use your judgment based on team conventions and whether the logic is more about "how to get data" vs "what to do with data"
+- Put in adapters: Data fetching patterns, cross-repository coordination, technical constraints (`status !== 'approved'` as a data filter)
+- Put in business logic: Domain rules, calculations, business decisions (`canBeReimbursed(expense, user)` as a business rule)
+- Gray areas: Use your judgment based on team conventions and whether the logic is more about "how to get data" vs "what to do with data"
 
 Don't over-optimize these boundaries initially. Start with what feels natural, and refactor when patterns emerge or testing becomes difficult.
 
@@ -1336,14 +1336,14 @@ This chapter addresses the architectural decisions around data access factories:
 
 The data access factory should provide **reusable building blocks** (repositories, common queries, cross-cutting procedures) rather than every possible operation. One-off migrations, specialized batch jobs, and narrow-purpose procedures often don't belong in it - they can consume the factory's building blocks without being part of it.
 
-**Include in data access factory:**
+Include in data access factory:
 
 - Repositories and basic CRUD operations
 - Reusable specialized data access functions (used across multiple contexts)
 - Client-side stored procedures with broad applicability
 - Cross-cutting concerns (auditing, bulk operations, common queries)
 
-**Instantiate on-demand:**
+Instantiate on-demand:
 
 - One-off migration scripts
 - Job-specific batch processing logic
@@ -1352,7 +1352,7 @@ The data access factory should provide **reusable building blocks** (repositorie
 
 Note that on-demand operations can still leverage dependency injection and testing patterns - they just don't clutter the general-purpose factory. For heavily database-focused operations, integration testing is often more valuable than unit testing anyway.
 
-The key insight is that data access factories work best when they provide **building blocks** that can be composed into larger operations, rather than trying to contain every conceivable operation. This keeps the factory focused, maintainable, and prevents it from becoming an unwieldy "god object" that grows indefinitely.
+The key insight is that data access factories work best when they provide building blocks that can be composed into larger operations, rather than trying to contain every conceivable operation. This keeps the factory focused, maintainable, and prevents it from becoming an unwieldy "god object" that grows indefinitely.
 
 ### How to Organize Data Access Factories
 
@@ -1639,7 +1639,7 @@ Once you've designed your data access architecture, the next question is how to 
 
 HTTP request handlers follow a consistent structure, but the approach evolves based on complexity.
 
-**Simple case** - no authorization, direct business logic:
+Simple case - no authorization, direct business logic:
 
 ```typescript
 async function handleSimpleExpenseUpdate(req: Request, res: Response) {
@@ -1662,7 +1662,7 @@ async function handleSimpleExpenseUpdate(req: Request, res: Response) {
 }
 ```
 
-**With authorization** - reveals data access duplication issues:
+With authorization - reveals data access duplication issues:
 
 ```typescript
 async function handleExpenseUpdateWithAuth(req: Request, res: Response) {
@@ -1723,11 +1723,11 @@ async function handleExpenseUpdate(req: Request, res: Response) {
 }
 ```
 
-The evolution sketched here shows key trade-offs: **pure dependency injection** (middle example) keeps functions testable but can cause data duplication, while **strategic prefetching** (final example) optimizes performance but couples the handler to specific data needs. Apply what makes sense - prefetch data at the handler level when multiple operations need the same entities, and inject data access methods for operations that need fresh or different data.
+The evolution sketched here shows key trade-offs: pure dependency injection (middle example) keeps functions testable but can cause data duplication, while strategic prefetching (final example) optimizes performance but couples the handler to specific data needs. Apply what makes sense - prefetch data at the handler level when multiple operations need the same entities, and inject data access methods for operations that need fresh or different data.
 
-Alternative approaches like **internal caching** in the data access factory can solve duplication transparently, but introduce implicit behavior and potential side-effects that may not be obvious to all developers. The explicit prefetching approach trades some handler complexity for predictable, transparent behavior.
+Alternative approaches like internal caching in the data access factory can solve duplication transparently, but introduce implicit behavior and potential side-effects that may not be obvious to all developers. The explicit prefetching approach trades some handler complexity for predictable, transparent behavior.
 
-**Composing multiple business operations** - as a final example, consider a more complex expense update logic that also needs to recalculate trip totals and potentially notify managers. Rather than handling all orchestration at the handler level, you can push the business orchestration down into the workflow function while keeping the handler focused on request/response concerns and dependency wiring:
+Composing multiple business operations - as a final example, consider a more complex expense update logic that also needs to recalculate trip totals and potentially notify managers. Rather than handling all orchestration at the handler level, you can push the business orchestration down into the workflow function while keeping the handler focused on request/response concerns and dependency wiring:
 
 ```typescript
 async function handleComplexExpenseUpdate(req: Request, res: Response) {
@@ -1771,9 +1771,9 @@ This approach keeps the handler focused on request lifecycle concerns (validatio
 
 #### Background Jobs and Scripts
 
-Background jobs, scripts, and other operational tasks typically run without user-based authorization concerns since they operate with system privileges rather than on behalf of individual users. However, they often need more complex data coordination and raise important questions about **what belongs in a data access factory** versus what should be instantiated on-demand.
+Background jobs, scripts, and other operational tasks typically run without user-based authorization concerns since they operate with system privileges rather than on behalf of individual users. However, they often need more complex data coordination and raise important questions about what belongs in a data access factory versus what should be instantiated on-demand.
 
-**Architectural boundaries**: The data access factory should provide **reusable building blocks** (repositories, common queries, cross-cutting procedures) rather than every possible operation. One-off migrations, specialized batch jobs, and narrow-purpose procedures often don't belong in it - they can consume the factory's building blocks without being part of it.
+Architectural boundaries: The data access factory should provide reusable building blocks (repositories, common queries, cross-cutting procedures) rather than every possible operation. One-off migrations, specialized batch jobs, and narrow-purpose procedures often don't belong in it - they can consume the factory's building blocks without being part of it.
 
 Like HTTP handlers, background jobs and scripts follow the same pattern of instantiating the data access factory to get their needed building blocks. The main difference is that they typically have less complex business logic and interact more directly with the provided repositories and queries, often performing straightforward data processing tasks without the layered dependency injection patterns seen in handlers.
 
