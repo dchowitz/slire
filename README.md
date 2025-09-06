@@ -519,13 +519,13 @@ This section presents principles for reducing coupling between data access and b
 
 ### Scope: Database Operations and Beyond
 
-The architectural patterns and design principles discussed here focus primarily on **database operations** - repositories, queries, and data persistence patterns. Throughout this guide, we use "data access" to mean specifically database operations, and you could consider replacing all `DataAccess` types in our examples with `DbAccess` to make this distinction clearer. However, most of these same principles are readily transferrable to other data-providing facilities like external APIs, file systems, caching layers, etc.
+The architectural patterns and design principles discussed here focus primarily on **database operations** - repositories, queries, and data persistence patterns. Throughout this guide, "data access" means specifically database operations, and you could consider replacing all `DataAccess` types in the examples with `DbAccess` to make this distinction clearer. However, most of these same principles are readily transferrable to other data-providing facilities like external APIs, file systems, caching layers, etc.
 
 When working with external services, consider organizing them into separate "service access" modules alongside your data access components. This separation maintains clear boundaries while allowing you to apply the same compositional patterns, and dependency injection approaches to both database operations and external service integrations.
 
-Note that we don't cover caching concerns in this guide, though you might consider baking caching into some read functions to hide those implementation details from consumers. Whether to include caching at the repository level, as a separate concern, or within specific operations depends heavily on your application's specific performance requirements, cache invalidation needs, and consistency guarantees - the same contextual considerations apply to caching external service responses.
+Note that this guide doesn't cover caching concerns, though you might consider baking caching into some read functions to hide those implementation details from consumers. Whether to include caching at the repository level, as a separate concern, or within specific operations depends heavily on your application's specific performance requirements, cache invalidation needs, and consistency guarantees - the same contextual considerations apply to caching external service responses.
 
-Finally, note that all examples below use functional approaches rather than classes. Functions naturally match the statelessness of typical data processing tasks (HTTP request handlers, scripts, etc.), while classes are designed to encapsulate operations over mutable state - something we rarely need in our data processing implementations. Following the convention where a function's first parameter is `deps` (dependencies) and subsequent parameters are processing inputs enables easy partial application and passing such functions around:
+Finally, note that all examples below use functional approaches rather than classes. Functions naturally match the statelessness of typical data processing tasks (HTTP request handlers, scripts, etc.), while classes are designed to encapsulate operations over mutable state - something rarely needed in data processing implementations. Following the convention where a function's first parameter is `deps` (dependencies) and subsequent parameters are processing inputs enables easy partial application and passing such functions around:
 
 ```typescript
 // FUNCTIONAL APPROACH USED HERE
@@ -591,7 +591,7 @@ Problems with this approach:
 
 Moreover, unit tests for business logic shouldn't need comprehensive, realistic repository mocks at all. The goal is to test the _business logic_, not data access patterns. Simple data mocks that provide exactly the input data needed for each test scenario are sufficient and often preferable - they're easier to set up and understand.
 
-This doesn't mean we shouldn't test data access at all. On the contrary, data access is ideally tested against the database (TODO link to test section) separately.
+This doesn't mean data access shouldn't be tested at all. On the contrary, data access is ideally tested against the database (TODO link to test section) separately.
 
 ```typescript
 // ✅ GOOD - explicit dependencies, clear interface
@@ -631,7 +631,7 @@ export type FindExpenses = ExpenseRepo['find'];
 // etc.
 ```
 
-For the sake of brevity, the examples below will assume we have such utility types defined somewhere.
+For the sake of brevity, the examples below assume such utility types are defined somewhere.
 
 ### Sandwich Method
 
@@ -642,7 +642,7 @@ The sandwich method is an established pattern that promotes clean separation bet
 3. **Write**: Persist any changes back to storage
 
 This approach creates a clear processing pipeline where business logic operates on plain data structures without knowledge of persistence mechanisms.
-Let's have a look at a contrived example:
+Here's a contrived example:
 
 ```typescript
 async function processExpenseReimbursement(
@@ -843,7 +843,7 @@ For maximum testability, you might prefer injecting repositories directly and ha
 
 ### Business Logic with Transactions
 
-When transactions are required, we can reuse our specialized data access functions from the previous section. The key is to let the caller manage the transaction boundary by passing the session to the adapter:
+When transactions are required, you can reuse specialized data access functions from the previous section. The key is to let the caller manage the transaction boundary by passing the session to the adapter:
 
 ```typescript
 // Keep the business logic function unchanged from the specialized functions section
@@ -1007,7 +1007,7 @@ One of the ongoing tensions in data access design is how to handle arbitrary que
 
 The fundamental question becomes: **when should you wrap queries in specialized functions versus injecting generic query capabilities directly?**
 
-As with most architectural decisions, there's no universal answer - the choice depends on your specific context, complexity, and trade-offs. Let's explore the patterns and decision criteria.
+As with most architectural decisions, there's no universal answer - the choice depends on your specific context, complexity, and trade-offs. The following sections explore the patterns and decision criteria.
 
 #### Direct Query Injection
 
@@ -1228,7 +1228,7 @@ const rogueSpec: ExpenseSpecification = {
 const result = await findExpensesBySpec(deps, rogueSpec); // Works!
 ```
 
-The key insight is that we need to make it impossible (not just inconvenient) for business logic to create arbitrary specifications. TypeScript's branded types provide exactly this capability - we can mark approved specifications with a unique symbol that only controlled factory functions can add. This prevents business logic from constructing specification objects directly while maintaining full parameterization flexibility.
+The key insight is making it impossible (not just inconvenient) for business logic to create arbitrary specifications. TypeScript's branded types provide exactly this capability - you can mark approved specifications with a unique symbol that only controlled factory functions can add. This prevents business logic from constructing specification objects directly while maintaining full parameterization flexibility.
 
 ```typescript
 // Create a unique symbol for marking approved specs
@@ -1610,7 +1610,7 @@ Practical Considerations:
 
 #### Wait, What About My Data Access Adapters?
 
-The [data access adapters](#data-access-adapters) we discussed earlier that are used across multiple contexts (HTTP handlers, background jobs, different business workflows) are also candidates for inclusion in factories (regardless of unified or modular). Factories already manage the underlying repositories they depend on, and adapters often coordinate multiple repositories making them perfect for lazy creation.
+The [data access adapters](#data-access-adapters) discussed earlier that are used across multiple contexts (HTTP handlers, background jobs, different business workflows) are also candidates for inclusion in factories (regardless of unified or modular). Factories already manage the underlying repositories they depend on, and adapters often coordinate multiple repositories making them perfect for lazy creation.
 
 A simple example:
 
@@ -1727,7 +1727,7 @@ The evolution sketched here shows key trade-offs: **pure dependency injection** 
 
 Alternative approaches like **internal caching** in the data access factory can solve duplication transparently, but introduce implicit behavior and potential side-effects that may not be obvious to all developers. The explicit prefetching approach trades some handler complexity for predictable, transparent behavior.
 
-**Composing multiple business operations** - as a final example, imagine we have a more complex expense update logic that also needs to recalculate trip totals and potentially notify managers. Rather than handling all orchestration at the handler level, we can push the business orchestration down into the workflow function while keeping the handler focused on request/response concerns and dependency wiring:
+**Composing multiple business operations** - as a final example, consider a more complex expense update logic that also needs to recalculate trip totals and potentially notify managers. Rather than handling all orchestration at the handler level, you can push the business orchestration down into the workflow function while keeping the handler focused on request/response concerns and dependency wiring:
 
 ```typescript
 async function handleComplexExpenseUpdate(req: Request, res: Response) {
