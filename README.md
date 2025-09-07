@@ -1730,6 +1730,7 @@ async function handleComplexExpenseUpdate(req: Request, res: Response) {
   const { userId } = validateAuth(req);
   const expenseData = validatePayload(req.body);
   const dataAccess = createDataAccessForRequest(req);
+  const pubSubAccess = createPubSubAccessForRequest(req);
 
   // Prefetch data needed for authorization and business logic
   const expense =
@@ -1745,7 +1746,7 @@ async function handleComplexExpenseUpdate(req: Request, res: Response) {
 
   const notifyManager = partial(notifyExpenseUpdate, {
     getUserById: dataAccess.users.repo.getById,
-    sendEmail: dataAccess.notifications.sendEmail, // TODO
+    sendEmail: pubSubAccess.notifications.sendEmail,
   });
 
   // Business orchestration handled by the workflow function
