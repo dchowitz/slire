@@ -32,11 +32,11 @@
   - [Client-Side Stored Procedures](#client-side-stored-procedures)
   - [Query Abstraction Patterns](#query-abstraction-patterns)
 - [A Factory to Rule Them All?](#a-factory-to-rule-them-all)
+  - [What Belongs in a Data Access Factory?](#what-belongs-in-a-data-access-factory)
   - [The Unified Data Access Factory](#the-unified-data-access-factory)
   - [Modular Theme-Oriented Factories](#modular-theme-oriented-factories)
-  - [Avoiding the "God Class" Problem](#avoiding-the-god-class-problem)
   - [Choosing a Factory Approach](#choosing-a-factory-approach)
-  - [Wait, What About My Data Access Adapters?](#wait-what-about-my-data-access-adapters)
+  - [Data Access Adapters in Factories](#data-access-adapters-in-factories)
 - [Application-Level Integration](#application-level-integration)
   - [HTTP Request Handlers](#http-request-handlers)
   - [Background Jobs and Scripts](#background-jobs-and-scripts)
@@ -1355,11 +1355,9 @@ Note that on-demand operations can still leverage dependency injection and testi
 
 The key insight is that data access factories work best when they provide building blocks that can be composed into larger operations, rather than trying to contain every conceivable operation. This keeps the factory focused, maintainable, and prevents it from becoming an unwieldy "god object" that grows indefinitely.
 
-### How to Organize Data Access Factories
+### The Unified Data Access Factory
 
-Once you've decided what belongs in your data access factory, the question becomes: how do you structure that factory to scale across multiple domains, teams, and usage contexts? Two main approaches emerge for organizing data access at scale:
-
-#### The Unified Data Access Factory
+Once you've decided what belongs in your data access factory, the question becomes: how do you structure that factory to scale across multiple domains, teams, and usage contexts? Two main approaches emerge for organizing data access.
 
 For applications where consistency and convenience are priorities, a single comprehensive factory provides all data access capabilities through one interface (simplified example):
 
@@ -1512,7 +1510,7 @@ export function createDataAccessForTest(organizationId: string): DataAccess {
 }
 ```
 
-#### Modular Theme-Oriented Factories
+### Modular Theme-Oriented Factories
 
 For larger applications or teams, breaking the monolithic factory into focused, domain-specific modules can improve maintainability and team ownership:
 
@@ -1576,18 +1574,7 @@ export function createComprehensiveDataAccess(
 }
 ```
 
-#### Avoiding the "God Class" Problem
-
-The modular approach naturally helps avoid the god class antipattern that can plague unified factories. By breaking functionality into focused, domain-specific modules, you get clear boundaries and separation of concerns. However, even if you prefer a unified interface, you can still apply internal modular organization:
-
-- Extract implementation modules: Keep the unified interface but implement each domain in separate files
-- Use composition: Build the factory by composing smaller, focused factory functions
-- Establish clear boundaries: Use TypeScript interfaces to enforce separation between domains
-- Separate concerns: Keep external service access (APIs, file systems) in distinct modules from database operations
-
-This way, you can have the convenience of a single entry point while maintaining the organizational benefits of modular design internally. Additionally, lazy initialization can help manage resource usage by only creating repositories and functions when first accessed, which is particularly useful for large unified factories.
-
-#### Choosing a Factory Approach
+### Choosing a Factory Approach
 
 The choice between unified and modular factories isn't binary - it depends on several contextual factors that often point in different directions leading to hybrid approaches providing both modular factories for focused use cases and comprehensive factories for broad access.
 
@@ -1609,7 +1596,18 @@ Practical Considerations:
 - Configuration complexity - different per-domain needs (databases, external services) push toward modularity
 - Testing and dependency injection preferences may favor one approach over another
 
-#### Wait, What About My Data Access Adapters?
+Avoiding the "God Class" Problem:
+
+The modular approach naturally helps avoid the god class antipattern that can plague unified factories. By breaking functionality into focused, domain-specific modules, you get clear boundaries and separation of concerns. However, even if you prefer a unified interface, you can still apply internal modular organization:
+
+- Extract implementation modules: Keep the unified interface but implement each domain in separate files
+- Use composition: Build the factory by composing smaller, focused factory functions
+- Establish clear boundaries: Use TypeScript interfaces to enforce separation between domains
+- Separate concerns: Keep external service access (APIs, file systems) in distinct modules from database operations
+
+This way, you can have the convenience of a single entry point while maintaining the organizational benefits of modular design internally. Additionally, lazy initialization can help manage resource usage by only creating repositories and functions when first accessed, which is particularly useful for large unified factories.
+
+### Data Access Adapters in Factories
 
 The [data access adapters](#data-access-adapters) discussed earlier that are used across multiple contexts (HTTP handlers, background jobs, different business workflows) are also candidates for inclusion in factories (regardless of unified or modular). Factories already manage the underlying repositories they depend on, and adapters often coordinate multiple repositories making them perfect for lazy creation.
 
