@@ -1634,6 +1634,8 @@ However, consider some potential concerns: including too many adapters can contr
 
 Once you've designed your data access architecture, the next question is how to integrate these patterns into real applications. This chapter covers practical usage patterns for HTTP request handlers, background jobs, and other application contexts, showing how the data access building blocks come together in practice.
 
+The following examples assume you're using [the unified data access factory](#the-unified-data-access-factory) approach with convenience functions like `createDataAccessForRequest` to simplify instantiation and configuration.
+
 ### HTTP Request Handlers
 
 HTTP request handlers follow a consistent structure, but the approach evolves based on complexity.
@@ -1643,12 +1645,10 @@ Simple case - no authorization, direct business logic:
 ```typescript
 async function handleSimpleExpenseUpdate(req: Request, res: Response) {
   // 1. Validate payload and extract context
-  const { organizationId } = validateAuth(req);
   const expenseData = validatePayload(req.body);
-  const logger = createLogger(req);
 
   // 2. Instantiate data access and call business logic
-  const dataAccess = createDataAccess({ organizationId, logger });
+  const dataAccess = createDataAccessForRequest(req);
   const result = await processExpenseUpdate(
     {
       getExpenseById: dataAccess.expenses.getExpenseById,
@@ -1665,10 +1665,9 @@ With authorization - reveals data access duplication issues:
 
 ```typescript
 async function handleExpenseUpdateWithAuth(req: Request, res: Response) {
-  const { organizationId, userId } = validateAuth(req);
+  const { userId } = validateAuth(req);
   const expenseData = validatePayload(req.body);
-  const logger = createLogger(req);
-  const dataAccess = createDataAccess({ organizationId, logger });
+  const dataAccess = createDataAccessForRequest(req);
 
   // Problem: Authorization needs expense data
   await checkCanWriteExpense(
@@ -1697,10 +1696,9 @@ Furthermore, this example reveals a **leaky abstraction problem**: the function 
 
 ```typescript
 async function handleExpenseUpdate(req: Request, res: Response) {
-  const { organizationId, userId } = validateAuth(req);
+  const { userId } = validateAuth(req);
   const expenseData = validatePayload(req.body);
-  const logger = createLogger(req);
-  const dataAccess = createDataAccess({ organizationId, logger });
+  const dataAccess = createDataAccessForRequest(req);
 
   // Strategic prefetch: Get data needed by multiple operations
   const expense =
@@ -1730,10 +1728,9 @@ Composing multiple business operations - as a final example, consider a more com
 
 ```typescript
 async function handleComplexExpenseUpdate(req: Request, res: Response) {
-  const { organizationId, userId } = validateAuth(req);
+  const { userId } = validateAuth(req);
   const expenseData = validatePayload(req.body);
-  const logger = createLogger(req);
-  const dataAccess = createDataAccess({ organizationId, logger });
+  const dataAccess = createDataAccessForRequest(req);
 
   // Prefetch data needed for authorization and business logic
   const expense =
