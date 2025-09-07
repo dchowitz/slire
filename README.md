@@ -2,6 +2,7 @@
 
 - [What the Heck is SmartRepo?](#what-the-heck-is-smartrepo)
 - [A Quick Glimpse](#a-quick-glimpse)
+- [Why SmartRepo? Addressing the "Yet Another Library" Question](#why-smartrepo-addressing-the-yet-another-library-question)
 - [API Reference Core CRUD Operations (SmartRepo interface)](#api-reference-core-crud-operations-smartrepo-interface)
   - [getById](#getbyid) - [getByIds](#getbyids)
   - [create](#create) - [createMany](#createmany)
@@ -40,7 +41,6 @@
 - [Application-Level Integration](#application-level-integration)
   - [HTTP Request Handlers](#http-request-handlers)
   - [Background Jobs and Scripts](#background-jobs-and-scripts)
-- [Why SmartRepo? Addressing the "Yet Another Library" Question](#why-smartrepo-addressing-the-yet-another-library-question)
 - [Addendum I - Pattern References (to be checked)](#addendum-i---pattern-references-to-be-checked)
 
 ---
@@ -244,6 +244,91 @@ updates with set/unset, variants with bulk support, filter syntax).
 This is no coincidence as the MongoDB API is considered very clean in that regard, and should also work well with other DB implementations.
 
 Finally, if you've been using `DocumentService` for most of your data access, you might wonder what a migration path to `SmartRepo` would look like. You're probably thinking it's quite an effort since you've injected `DocumentService` instances all over the place and the interfaces aren't compatible. That's correct, and the "Recommended Usage Patterns" section explains why we think that injecting repository instances everywhere isn't a good idea in the first place.
+
+## Why SmartRepo? Addressing the "Yet Another Library" Question
+
+It's fair to ask: "Why create another database abstraction library when so many already exist?" This question deserves a thoughtful response, especially given the abundance of ORMs (Object-Relational Mappers) and ODMs (Object-Document Mappers - we'll use "ORM" to refer to both throughout this section) and database abstractions in the Node.js ecosystem.
+
+### The Problem with Traditional ORMs
+
+Most existing solutions follow the traditional ORM approach: comprehensive abstractions that aim to hide database complexity entirely. While well-intentioned, this approach often creates more problems than it solves:
+
+Popular solutions like Mongoose, Prisma, TypeORM, and MikroORM each provide extensive feature sets with schema validation, relationship mapping, and query builders. However, experience shows that developers inevitably hit performance walls and must bypass these abstractions to access native database features for optimization - defeating the original purpose of the abstraction layer.
+
+ORMs promise to hide "supposedly complex" database details and translate relational concepts to object-oriented perspectives, but they rarely deliver on these promises. The N+1 problem, inefficient joins, excessive roundtrips, and other performance issues force developers to drop down to native queries anyway. If separation of business logic from data access is needed regardless (as we'll demonstrate in the architectural guidance sections), what value does the additional ORM layer actually provide?
+
+_Note: Sources documenting widespread ORM performance issues and the tendency for developers to bypass ORM abstractions should be added here to support these claims._
+
+Query languages like SQL and MongoDB's aggregation framework are already excellent APIs. Native drivers for modern databases provide clean, well-designed interfaces. The abstraction layer often becomes unnecessary overhead rather than genuine value.
+
+### SmartRepo's Native-First Philosophy
+
+SmartRepo emerged from a fundamentally different perspective: start with native database access, then identify and solve the repetitive patterns that naturally arise.
+
+Rather than trying to hide database complexity, SmartRepo embraces it while addressing the genuine pain points developers face with pure native access:
+
+Native Access First: Direct database operations are the primary interface, not an "escape hatch." SmartRepo provides helpers that enhance native access rather than replacing it.
+
+Consistency Made Easy: Instead of forcing rigid schemas, SmartRepo provides optional consistency guarantees (timestamps, versioning, soft-delete, audit trails) that can be applied when using native operations.
+
+Automatic Multi-tenancy: Built-in scoping eliminates the repetitive, error-prone task of manually adding tenant filters to every query.
+
+Minimal, Focused Abstraction: Only the most common operations (basic CRUD) get convenience methods. Everything else uses native database features with optional consistency helpers.
+
+In this sense, SmartRepo follows the tradition of so-called MicroORMs like Dapper (C#), Massive (Node.js), and PetaPoco (C#). MicroORMs emerged as a response to the complexity and performance overhead of full-featured ORMs. They provide just enough abstraction to eliminate boilerplate for common operations while preserving direct access to the database's native capabilities.
+
+Where traditional ORMs try to hide the database entirely, MicroORMs enhance database access without obscuring it. They arose from the recognition that experienced developers often know their database technology well and don't want it abstracted away - they want tools that make database access more convenient without sacrificing control or performance.
+
+### What SmartRepo Is Not
+
+SmartRepo deliberately avoids the comprehensive feature approach of traditional ORMs:
+
+It's not trying to replace your database knowledge with abstractions. Instead of hiding MongoDB's powerful aggregation framework behind a query builder, SmartRepo encourages you to use it directly while providing consistency helpers.
+
+It's not trying to be database-agnostic for complex operations. Multi-database ORMs either reduce functionality to the lowest common denominator or leak database-specific features anyway. SmartRepo focuses on document databases and embraces their unique strengths.
+
+It's not trying to manage your schema or relationships. Document databases excel at flexible schemas and embedded data - SmartRepo works with this paradigm rather than forcing relational patterns.
+
+### The Bottom-Up Approach
+
+SmartRepo's design emerged organically from real development patterns rather than top-down architectural decisions. Teams repeatedly found themselves:
+
+- Writing the same basic CRUD operations across different repositories
+- Manually adding organizational scoping to every single query
+- Inconsistently applying timestamps, versioning, and audit trails
+- Struggling to test business logic that was tightly coupled to database operations
+- Applying consistent architectural patterns for dependency management and testing
+
+Instead of layering another abstraction on top, SmartRepo codifies these emerging patterns while preserving direct access to database capabilities. The extensive architectural guidance that follows in this document isn't theoretical - it documents proven approaches that evolved from practical necessity.
+
+### When to Choose SmartRepo
+
+Consider SmartRepo when:
+
+- You want to use native database features without losing consistency guarantees
+- You need built-in multi-tenancy that doesn't require remembering to add scoping to every query
+- You prefer working with your database's native query language rather than learning another DSL
+- You value architectural patterns over comprehensive abstractions
+- Performance and database roundtrips matter to your application
+- You're comfortable with your database technology and don't want it hidden from you
+
+Choose traditional ORMs when:
+
+- You want comprehensive abstractions that handle complex scenarios automatically
+- Schema validation and relationship management are more important than performance flexibility
+- You prefer model-based approaches with decorators and classes
+- You need the ORM to make database technology decisions for you
+- Development speed is more important than understanding database mechanics
+- You're building prototypes or simple applications where architectural patterns are overkill
+
+Choose native drivers directly when:
+
+- You don't need multi-tenancy, consistency helpers, or architectural patterns
+- Your team has deep database expertise and doesn't benefit from any abstraction layer
+- Performance is absolutely critical and any helper overhead is unacceptable
+- You're building highly specialized database operations that don't fit common patterns
+
+The key insight is that SmartRepo occupies a specific middle ground: more convenience for repetitive tasks than pure native drivers, but significantly less abstraction than traditional ORMs. It's for teams that understand their database technology and want to use it effectively, not hide from it.
 
 ## API Reference Core CRUD Operations (SmartRepo interface)
 
@@ -1833,93 +1918,6 @@ async function runReceiptReprocessingJob(organizationId: string) {
 ```
 
 The key insight is that background jobs benefit from the same architectural patterns - they use factory building blocks for common operations but can bypass the factory for performance-critical or database-specific operations when needed.
-
-## Why SmartRepo? Addressing the "Yet Another Library" Question
-
-It's fair to ask: "Why create another database abstraction library when so many already exist?" This question deserves a thoughtful response, especially given the abundance of ORMs (Object-Relational Mappers) and ODMs (Object-Document Mappers - we'll use "ORM" to refer to both throughout this section) and database abstractions in the Node.js ecosystem.
-
-### The Problem with Traditional ORMs
-
-Most existing solutions follow the traditional ORM approach: comprehensive abstractions that aim to hide database complexity entirely. While well-intentioned, this approach often creates more problems than it solves:
-
-Popular solutions like Mongoose, Prisma, TypeORM, and MikroORM each provide extensive feature sets with schema validation, relationship mapping, and query builders. However, experience shows that developers inevitably hit performance walls and must bypass these abstractions to access native database features for optimization - defeating the original purpose of the abstraction layer.
-
-ORMs promise to hide "supposedly complex" database details and translate relational concepts to object-oriented perspectives, but they rarely deliver on these promises. The N+1 problem, inefficient joins, excessive roundtrips, and other performance issues force developers to drop down to native queries anyway. If separation of business logic from data access is needed regardless (as demonstrated throughout this guide), what value does the additional ORM layer actually provide?
-
-_Note: Sources documenting widespread ORM performance issues and the tendency for developers to bypass ORM abstractions should be added here to support these claims._
-
-Query languages like SQL and MongoDB's aggregation framework are already excellent APIs. Native drivers for modern databases provide clean, well-designed interfaces. The abstraction layer often becomes unnecessary overhead rather than genuine value.
-
-### SmartRepo's Native-First Philosophy
-
-SmartRepo emerged from a fundamentally different perspective: start with native database access, then identify and solve the repetitive patterns that naturally arise.
-
-Rather than trying to hide database complexity, SmartRepo embraces it while addressing the genuine pain points developers face with pure native access:
-
-Native Access First: Direct database operations are the primary interface, not an "escape hatch." SmartRepo provides helpers that enhance native access rather than replacing it.
-
-Consistency Made Easy: Instead of forcing rigid schemas, SmartRepo provides optional consistency guarantees (timestamps, versioning, soft-delete, audit trails) that can be applied when using native operations.
-
-Automatic Multi-tenancy: Built-in scoping eliminates the repetitive, error-prone task of manually adding tenant filters to every query.
-
-Minimal, Focused Abstraction: Only the most common operations (basic CRUD) get convenience methods. Everything else uses native database features with optional consistency helpers.
-
-In this sense, SmartRepo follows the tradition of so-called MicroORMs like Dapper (C#), Massive (Node.js), and PetaPoco (C#). MicroORMs emerged as a response to the complexity and performance overhead of full-featured ORMs. They provide just enough abstraction to eliminate boilerplate for common operations while preserving direct access to the database's native capabilities.
-
-Where traditional ORMs try to hide the database entirely, MicroORMs enhance database access without obscuring it. They arose from the recognition that experienced developers often know their database technology well and don't want it abstracted away - they want tools that make database access more convenient without sacrificing control or performance.
-
-### What SmartRepo Is Not
-
-SmartRepo deliberately avoids the comprehensive feature approach of traditional ORMs:
-
-It's not trying to replace your database knowledge with abstractions. Instead of hiding MongoDB's powerful aggregation framework behind a query builder, SmartRepo encourages you to use it directly while providing consistency helpers.
-
-It's not trying to be database-agnostic for complex operations. Multi-database ORMs either reduce functionality to the lowest common denominator or leak database-specific features anyway. SmartRepo focuses on document databases and embraces their unique strengths.
-
-It's not trying to manage your schema or relationships. Document databases excel at flexible schemas and embedded data - SmartRepo works with this paradigm rather than forcing relational patterns.
-
-### The Bottom-Up Approach
-
-SmartRepo's design emerged organically from real development patterns rather than top-down architectural decisions. Teams repeatedly found themselves:
-
-- Writing the same basic CRUD operations across different repositories
-- Manually adding organizational scoping to every single query
-- Inconsistently applying timestamps, versioning, and audit trails
-- Struggling to test business logic that was tightly coupled to database operations
-- Applying consistent architectural patterns for dependency management and testing
-
-Instead of layering another abstraction on top, SmartRepo codifies these emerging patterns while preserving direct access to database capabilities. The extensive architectural guidance in this document isn't theoretical - it documents proven approaches that evolved from practical necessity.
-
-### When to Choose SmartRepo
-
-Consider SmartRepo when:
-
-- You want to use native database features without losing consistency guarantees
-- You need built-in multi-tenancy that doesn't require remembering to add scoping to every query
-- You prefer working with your database's native query language rather than learning another DSL
-- You value architectural patterns over comprehensive abstractions
-- Performance and database roundtrips matter to your application
-- You're comfortable with your database technology and don't want it hidden from you
-
-Choose traditional ORMs when:
-
-- You want comprehensive abstractions that handle complex scenarios automatically
-- Schema validation and relationship management are more important than performance flexibility
-- You prefer model-based approaches with decorators and classes
-- You need the ORM to make database technology decisions for you
-- Development speed is more important than understanding database mechanics
-- You're building prototypes or simple applications where architectural patterns are overkill
-
-Choose native drivers directly when:
-
-- You don't need multi-tenancy, consistency helpers, or architectural patterns
-- Your team has deep database expertise and doesn't benefit from any abstraction layer
-- Performance is absolutely critical and any helper overhead is unacceptable
-- You're building highly specialized database operations that don't fit common patterns
-
-The key insight is that SmartRepo occupies a specific middle ground: more convenience for repetitive tasks than pure native drivers, but significantly less abstraction than traditional ORMs. It's for teams that understand their database technology and want to use it effectively, not hide from it.
-
----
 
 ## Addendum I - Pattern References (to be checked)
 
