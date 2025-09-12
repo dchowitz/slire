@@ -245,17 +245,18 @@ This is no coincidence as the MongoDB API is considered very clean in that regar
 
 Finally, if you've been using `DocumentService` for most of your data access, you might wonder what a migration path to `SmartRepo` would look like. You're probably thinking it's quite an effort since you've injected `DocumentService` instances all over the place and the interfaces aren't compatible. That's correct, and the "Recommended Usage Patterns" section explains why we think that injecting repository instances everywhere isn't a good idea in the first place.
 
-## Why SmartRepo? Addressing the "Yet Another Library" Question
+## [DRAFT] Why SmartRepo? Addressing the "Yet Another Library" Question
 
 It's fair to ask: "Why create another database abstraction library when so many already exist?" This question deserves a thoughtful response, especially given the abundance of ORMs (Object-Relational Mappers) and ODMs (Object-Document Mappers - we'll use "ORM" to refer to both throughout this section) and database abstractions in the Node.js ecosystem.
 
 ### The Problem with Traditional ORMs
 
+!! fix links
 Most existing solutions follow the traditional ORM approach: comprehensive abstractions that aim to hide database complexity entirely. While well-intentioned, this approach often creates more problems than it solves:
 
-Popular solutions like [Mongoose](https://mongoosejs.com/), [Prisma](https://www.prisma.io/), [TypeORM](https://typeorm.io/), and [MikroORM](https://mikro-orm.io/) each provide extensive feature sets with schema validation, relationship mapping, and query builders. However, experience shows that developers inevitably hit performance walls and must bypass these abstractions to access native database features for optimization - defeating the original purpose of the abstraction layer.
+Popular solutions like [Mongoose](https://mongoosejs.com/), [Prisma](https://www.prisma.io/orm), [TypeORM](https://typeorm.io/), and [MikroORM](https://mikro-orm.io/) each provide extensive feature sets with schema validation, relationship mapping, and query builders. However, experience shows that developers inevitably hit performance walls and must bypass these abstractions to access native database features for optimization - defeating the original purpose of the abstraction layer.
 
-ORMs promise to hide "supposedly complex" database details and translate relational concepts to object-oriented perspectives, but they rarely deliver on these promises. The N+1 problem, inefficient joins, excessive roundtrips, and other performance issues force developers to drop down to native queries anyway. If separation of business logic from data access is needed regardless (as we'll demonstrate in the architectural guidance sections), what value does the additional ORM layer actually provide?
+ORMs promise to hide "supposedly complex" database details and translate relational concepts to object-oriented perspectives (!!ODMs have a different focus and we should also focus more on ODMs unique selling points - query builders, schemas, validation), but they rarely deliver on these promises. The N+1 problem, inefficient joins, excessive roundtrips, and other performance issues force developers to drop down to native queries anyway. If separation of business logic from data access is needed regardless (as we'll demonstrate in the architectural guidance sections), what value does the additional ORM layer actually provide?
 
 The performance issues with ORMs are well-documented: Ted Neward famously called the ["Object-Relational Impedance Mismatch"](https://blog.codinghorror.com/object-relational-mapping-is-the-vietnam-war-of-computer-science/) the "Vietnam War of Computer Science." The [N+1 query problem](https://stackoverflow.com/questions/97197/what-is-the-n1-selects-problem-in-orm-object-relational-mapping) remains a persistent issue across all major ORMs, and developers frequently discuss [when to bypass ORM abstractions](https://enterprisecraftsmanship.com/posts/when-to-use-orm/) for performance-critical operations.
 
