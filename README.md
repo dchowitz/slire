@@ -2,7 +2,9 @@
 
 - [What the Heck is SmartRepo?](#what-the-heck-is-smartrepo)
 - [A Quick Glimpse](#a-quick-glimpse)
-- [Why SmartRepo? Addressing the "Yet Another Library" Question](#why-smartrepo-addressing-the-yet-another-library-question)
+- [Why SmartRepo?](#why-smartrepo)
+  - [The Problem with Traditional ORMs](#the-problem-with-traditional-orms)
+  - [SmartRepo's Philosophy and Approach](#smartrepos-philosophy-and-approach)
 - [API Reference Core CRUD Operations (SmartRepo interface)](#api-reference-core-crud-operations-smartrepo-interface)
   - [getById](#getbyid) - [getByIds](#getbyids)
   - [create](#create) - [createMany](#createmany)
@@ -246,7 +248,7 @@ This is no coincidence as the MongoDB API is considered very clean in that regar
 !! consider moving somewhere else
 Finally, if you've been using `DocumentService` for most of your data access, you might wonder what a migration path to `SmartRepo` would look like. You're probably thinking it's quite an effort since you've injected `DocumentService` instances all over the place and the interfaces aren't compatible. That's correct, and the "Recommended Usage Patterns" section explains why we think that injecting repository instances everywhere isn't a good idea in the first place.
 
-## Why SmartRepo? Addressing the "Yet Another Library" Question
+## Why SmartRepo?
 
 It's fair to ask: "Why create another database abstraction library when so many already exist?" This question deserves a thoughtful response, especially given the abundance of ORMs (Object-Relational Mappers) and ODMs (Object-Document Mappers - we'll use "ORM" to refer to both throughout this section) in the Node.js ecosystem.
 
@@ -292,8 +294,6 @@ This approach emerged organically from observing teams repeatedly writing the sa
 
 The operations listed here resemble the full set of DB-agnostic functions in a SmartRepo. At time of writing only the MongoDB implementation existed. So some descriptions might mention some characteristics specific to MongoDB. However, the interface is designed to
 be as simple as possible to allow being implemented for other DBs, particularly Firestore.
-
-- TODO: section to explain API design decisions
 
 **Note 1**: In the function signatures below, `T` represents the entity type.
 
