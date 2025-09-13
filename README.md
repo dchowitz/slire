@@ -247,7 +247,7 @@ SmartRepo doesn't try to replace your database knowledge with abstractions. Inst
 
 **Bottom-up design from real patterns:**
 
-This approach emerged organically from observing teams repeatedly writing the same basic CRUD operations, inconsistently applying timestamps and audit trails, and struggling with tightly coupled business logic. SmartRepo codifies these proven patterns while working alongside direct database access. The extensive architectural guidance in the second part of this document describes approaches that evolved from practical necessity, not theoretical design.
+This approach emerged organically from observing teams repeatedly writing the same basic CRUD operations, inconsistently applying timestamps and audit trails, and struggling with tightly coupled business logic. SmartRepo codifies these proven patterns while working alongside direct database access. The extensive architectural guidance in the second part of this document then shows how to integrate tools like SmartRepo effectively into application architecture and business logic - patterns that evolved from practical necessity, not theoretical design.
 
 ## API Reference Core CRUD Operations (SmartRepo interface)
 
