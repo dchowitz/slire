@@ -2947,7 +2947,7 @@ describe('createSmartMongoRepo', function () {
   });
 
   describe('stripSystemFields helper', () => {
-    it('should strip _id but preserve id (for upsert compatibility)', async () => {
+    it('should strip both id and _id (users handle id explicitly for upsert)', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
@@ -2966,14 +2966,13 @@ describe('createSmartMongoRepo', function () {
       const cleaned = repo.stripSystemFields(entityWithSystemFields);
 
       expect(cleaned).toEqual({
-        id: 'test-id', // Preserved for upsert compatibility
         name: 'John Doe',
         email: 'john@example.com',
         age: 30,
         organizationId: 'acme',
         isActive: true,
       });
-      expect(cleaned).toHaveProperty('id'); // Preserved
+      expect(cleaned).not.toHaveProperty('id'); // Stripped
       expect(cleaned).not.toHaveProperty('_id'); // Stripped
     });
 
@@ -2997,7 +2996,6 @@ describe('createSmartMongoRepo', function () {
       const cleaned = repo.stripSystemFields(entityWithTimestamps);
 
       expect(cleaned).toEqual({
-        id: 'test-id',
         name: 'John Doe',
         organizationId: 'acme',
         isActive: true,
@@ -3032,7 +3030,6 @@ describe('createSmartMongoRepo', function () {
       const cleaned = repo.stripSystemFields(entityWithCustomTimestamps);
 
       expect(cleaned).toEqual({
-        id: 'test-id',
         age: 30,
         isActive: true,
       });
@@ -3059,7 +3056,6 @@ describe('createSmartMongoRepo', function () {
       const cleaned = repo.stripSystemFields(entityWithVersion);
 
       expect(cleaned).toEqual({
-        id: 'test-id',
         name: 'John Doe',
         organizationId: 'acme',
         isActive: true,
@@ -3085,7 +3081,6 @@ describe('createSmartMongoRepo', function () {
       const cleaned = repo.stripSystemFields(entityWithCustomVersion);
 
       expect(cleaned).toEqual({
-        id: 'test-id',
         name: 'John Doe',
         organizationId: 'acme',
         isActive: true,
@@ -3111,7 +3106,6 @@ describe('createSmartMongoRepo', function () {
       const cleaned = repo.stripSystemFields(entityWithSoftDelete);
 
       expect(cleaned).toEqual({
-        id: 'test-id',
         name: 'John Doe',
         organizationId: 'acme',
         isActive: true,
@@ -3146,14 +3140,13 @@ describe('createSmartMongoRepo', function () {
       const cleaned = repo.stripSystemFields(entityWithAllSystemFields);
 
       expect(cleaned).toEqual({
-        id: 'test-id', // Preserved for upsert compatibility
         name: 'John Doe',
         organizationId: 'acme',
         isActive: true,
       });
 
-      // Verify system fields are stripped appropriately
-      expect(cleaned).toHaveProperty('id'); // Preserved for upsert
+      // Verify all system fields are stripped
+      expect(cleaned).not.toHaveProperty('id'); // Stripped
       expect(cleaned).not.toHaveProperty('_id'); // Stripped
       expect(cleaned).not.toHaveProperty('_createdAt');
       expect(cleaned).not.toHaveProperty('_updatedAt');
@@ -3196,7 +3189,7 @@ describe('createSmartMongoRepo', function () {
       expect(saved!._version).toBe(1); // System-generated, not 999
     });
 
-    it('should work with upsert operation (preserves id)', async () => {
+    it('should work with upsert operation (explicit id handling)', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
@@ -3217,11 +3210,11 @@ describe('createSmartMongoRepo', function () {
         isActive: true,
       };
 
-      // Using the helper preserves id for upsert
+      // Strip system fields and explicitly add back the id for upsert
       const cleanEntity = repo.stripSystemFields(domainEntity);
-      expect(cleanEntity.id).toBe('upsert-test-id'); // Preserved for upsert
+      expect(cleanEntity).not.toHaveProperty('id'); // Stripped
 
-      await repo.upsert(cleanEntity); // Works because id is preserved
+      await repo.upsert({ ...cleanEntity, id: domainEntity.id }); // Explicit id handling
 
       // Verify it was created with system-managed fields
       const saved = await repo.collection.findOne({ _id: 'upsert-test-id' });

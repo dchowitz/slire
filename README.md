@@ -356,9 +356,9 @@ Returns the number of entities that match the provided specification. Like `coun
 
 ### stripSystemFields
 
-`stripSystemFields<U>(entity: U): Omit<U, '_id'>`
+`stripSystemFields<U>(entity: U): Omit<U, 'id'>`
 
-Helper method that removes system-managed fields from an entity object, making it ready for `create` or `upsert` operations. Strips exactly the fields configured for this repository instance (timestamps, version, soft delete) while preserving the `id` field needed for upsert operations. See the MongoDB-specific implementation section for detailed usage examples and behavior.
+Helper method that removes system-managed fields from an entity object, making it ready for repository operations. Strips exactly the fields configured for this repository instance (id, timestamps, version, soft delete). For upsert operations, users explicitly handle the id field. See the MongoDB-specific implementation section for detailed usage examples and behavior.
 
 ## MongoDB Implementation
 
@@ -464,18 +464,17 @@ Helper method that transforms a repository update operation into a MongoDB-compl
 
 ### stripSystemFields
 
-`stripSystemFields<U>(entity: U): Omit<U, '_id'>`
+`stripSystemFields<U>(entity: U): Omit<U, 'id'>`
 
-Helper method that removes system-managed fields from an entity object, making it ready for `create` or `upsert` operations. The method is context-aware and strips exactly the fields configured for this repository instance:
+Helper method that removes system-managed fields from an entity object, making it ready for repository operations. The method is context-aware and strips exactly the fields configured for this repository instance:
 
-- **Always removed**: `_id` (MongoDB internal identifier)
-- **Always preserved**: `id` (user-facing identifier, needed for upsert operations)
+- **Always removed**: `id` (user-facing identifier - handled explicitly for upsert)
 - **Conditionally removed** (based on repository configuration):
   - Timestamp fields: `_createdAt`, `_updatedAt`, `_deletedAt` (or custom names)
   - Version field: `_version` (or custom name)
   - Soft delete field: `_deleted`
 
-This helper simplifies working with domain objects that might include system fields, eliminating the need for manual field stripping while maintaining compatibility with both `create` and `upsert` operations.
+This helper simplifies working with domain objects that might include system fields, eliminating the need for manual field stripping. For upsert operations, users explicitly merge the id back in, making the intent clear.
 
 ```typescript
 const repo = createSmartMongoRepo({
@@ -493,17 +492,17 @@ const domainUser = {
   _version: 42, // System field - will be stripped
 };
 
-// Clean for repository operations - works with both create and upsert
+// Clean for repository operations
 const cleanUser = repo.stripSystemFields(domainUser);
 
-// Create operation (ignores the id field)
+// Create operation - clean entity without any ids
 const newId = await repo.create(cleanUser);
 
-// Upsert operation (uses the preserved id field)
-await repo.upsert(cleanUser);
+// Upsert operation - explicit id handling
+await repo.upsert({ ...cleanUser, id: domainUser.id });
 
 // System fields are automatically managed by the repository
-const saved = await repo.getById(cleanUser.id);
+const saved = await repo.getById(domainUser.id);
 console.log(saved._createdAt); // Current timestamp, not 2020-01-01
 console.log(saved._version); // System-managed, not 42
 ```
