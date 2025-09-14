@@ -410,8 +410,6 @@ Direct access to the underlying MongoDB collection instance. This property allow
 
 Helper method that applies the repository's scope filtering to a given filter object. Takes your custom filter criteria and merges it with the repository's configured scope (e.g., organizationId filter) and, by default, soft delete exclusion (if soft-delete is enabled) to ensure operations only target entities within the repository's scope that haven't been soft-deleted. Use the `includeSoftDeleted: true` option to include soft-deleted entities in the filter. Essential for maintaining data isolation when performing direct queries, updates, deletes, aggregations, or bulk operations on the collection.
 
-This function consolidates the behavior previously split between `applyScopeForRead` and `applyScopeForWrite`, providing consistent filtering with explicit control over soft-delete inclusion.
-
 ### buildUpdateOperation
 
 `buildUpdateOperation(update: UpdateOperation<any>): any`
