@@ -18,7 +18,7 @@
   - [withSession](#withsession)
   - [runTransaction](#runtransaction)
   - [collection](#collection)
-  - [applyRepoConstraints](#applyrepoconstraints)
+  - [applyConstraints](#applyconstraints)
   - [buildUpdateOperation](#buildupdateoperation)
 - [Recommended Usage Patterns](#recommended-usage-patterns)
   - [Repository Factories](#repository-factories)
@@ -157,7 +157,7 @@ export async function markTopExpenses({
       // remove marker from all current top expenses
       await repo.collection.updateMany(
         // -> a repo instance exposes the underlying collection
-        repo.applyRepoConstraints({ currency, [TOP_MARKER]: true }), // -> applyRepoConstraints ensures org scope
+        repo.applyConstraints({ currency, [TOP_MARKER]: true }), // -> applyConstraints ensures org scope
         repo.buildUpdateOperation({ unset: { [TOP_MARKER]: 1 } }), // -> applies timestamps etc. if configured
         { session }
       );
@@ -166,7 +166,7 @@ export async function markTopExpenses({
       const topExpenses = await repo.collection
         .aggregate<{ expenseId: string }>(
           [
-            { $match: repo.applyRepoConstraints({ currency }) }, // -> applyRepoConstraints ensures org scope and excludes soft-deleted
+            { $match: repo.applyConstraints({ currency }) }, // -> applyConstraints ensures org scope and excludes soft-deleted
             { $sort: { category: 1, totalClaim: -1 } },
             { $group: { _id: '$categoryId', expenseId: { $first: '$_id' } } },
           ],
@@ -178,7 +178,7 @@ export async function markTopExpenses({
       await repo.collection.bulkWrite(
         topExpenses.map((e) => ({
           updateOne: {
-            filter: repo.applyRepoConstraints({ _id: e.expenseId }), // -> again, ensure org scope
+            filter: repo.applyConstraints({ _id: e.expenseId }), // -> again, ensure org scope
             update: repo.buildUpdateOperation({ set: { [TOP_MARKER]: true } }), // -> applies timestamps etc. if configured
           },
         })),
@@ -402,11 +402,11 @@ This method is best suited for simple scenarios where the provided transaction-a
 
 `collection: Collection<any>`
 
-Direct access to the underlying MongoDB collection instance. This property allows you to perform advanced MongoDB operations that aren't covered by the SmartRepo interface, such as aggregations, complex queries, bulk operations, or any other collection-level methods. When using the collection directly, you can still leverage the repository's helper methods (`applyRepoConstraints`, `buildUpdateOperation`) to maintain consistency with the repository's configured scoping, timestamps, and versioning behavior.
+Direct access to the underlying MongoDB collection instance. This property allows you to perform advanced MongoDB operations that aren't covered by the SmartRepo interface, such as aggregations, complex queries, bulk operations, or any other collection-level methods. When using the collection directly, you can still leverage the repository's helper methods (`applyConstraints`, `buildUpdateOperation`) to maintain consistency with the repository's configured scoping, timestamps, and versioning behavior.
 
-### applyRepoConstraints
+### applyConstraints
 
-`applyRepoConstraints(input: any, options?: { includeSoftDeleted?: boolean }): any`
+`applyConstraints(input: any, options?: { includeSoftDeleted?: boolean }): any`
 
 Helper method that applies the repository's scope filtering to a given filter object. Takes your custom filter criteria and merges it with the repository's configured scope (e.g., organizationId filter) and, by default, soft delete exclusion (if soft-delete is enabled) to ensure operations only target entities within the repository's scope that haven't been soft-deleted. Use the `includeSoftDeleted: true` option to include soft-deleted entities in the filter. Essential for maintaining data isolation when performing direct queries, updates, deletes, aggregations, or bulk operations on the collection.
 
@@ -492,13 +492,13 @@ When performing operations directly on `repo.collection`, always use the provide
 ```typescript
 // ✅ GOOD - uses helper methods (excludes soft-deleted by default)
 await repo.collection.updateMany(
-  repo.applyRepoConstraints({ status: 'active' }),
+  repo.applyConstraints({ status: 'active' }),
   repo.buildUpdateOperation({ set: { processed: true } })
 );
 
 // ✅ ALSO GOOD - explicitly include soft-deleted entities when needed
 await repo.collection.updateMany(
-  repo.applyRepoConstraints({ status: 'active' }, { includeSoftDeleted: true }),
+  repo.applyConstraints({ status: 'active' }, { includeSoftDeleted: true }),
   repo.buildUpdateOperation({ set: { processed: true } })
 );
 
@@ -953,7 +953,7 @@ export async function markTopExpenses({
       const topExpenses = await repo.collection
         .aggregate<{ expenseId: string }>(
           [
-            { $match: repo.applyRepoConstraints({ currency }) },
+            { $match: repo.applyConstraints({ currency }) },
             { $sort: { category: 1, totalClaim: -1 } },
             { $group: { _id: '$categoryId', expenseId: { $first: '$_id' } } },
           ],
@@ -965,7 +965,7 @@ export async function markTopExpenses({
       await repo.collection.bulkWrite(
         topExpenses.map((e) => ({
           updateOne: {
-            filter: repo.applyRepoConstraints({ _id: e.expenseId }),
+            filter: repo.applyConstraints({ _id: e.expenseId }),
             update: repo.buildUpdateOperation({ set: { [TOP_MARKER]: true } }),
           },
         })),
@@ -1804,9 +1804,7 @@ async function runExpenseCleanupJobOptimized(organizationId: string) {
   const repo = createExpenseRepo(mongoClient, { organizationId });
 
   // MongoDB-specific: efficient single deleteMany operation
-  const filter = repo.applyRepoConstraints(
-    createStaleExpenseSpec(30).toFilter()
-  );
+  const filter = repo.applyConstraints(createStaleExpenseSpec(30).toFilter());
   const result = await repo.collection.deleteMany(filter);
 
   logger.info(`Cleaned up ${result.deletedCount} stale expenses`);
