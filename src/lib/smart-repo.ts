@@ -107,8 +107,10 @@ type MongoRepo<
   Entity extends Record<string, unknown>
 > = SmartRepo<T, Scope, Entity> & {
   collection: Collection<any>;
-  applyScopeForRead: (input: any) => any;
-  applyScopeForWrite: (input: any) => any;
+  applyRepoConstraints: (
+    input: any,
+    options?: { includeSoftDeleted?: boolean }
+  ) => any;
   buildUpdateOperation: (update: UpdateOperation<any>) => any;
   withSession(session: ClientSession): MongoRepo<T, Scope, Entity>;
   runTransaction<R>(
@@ -136,11 +138,25 @@ export type SmartRepo<
   create(entity: Entity): Promise<string>;
   createMany(entities: Entity[]): Promise<string[]>;
 
-  update(id: string, update: UpdateOperation<Entity>): Promise<void>;
-  updateMany(ids: string[], update: UpdateOperation<Entity>): Promise<void>;
+  update(
+    id: string,
+    update: UpdateOperation<Entity>,
+    options?: { includeSoftDeleted?: boolean }
+  ): Promise<void>;
+  updateMany(
+    ids: string[],
+    update: UpdateOperation<Entity>,
+    options?: { includeSoftDeleted?: boolean }
+  ): Promise<void>;
 
-  upsert(entity: Entity & { id: string }): Promise<void>;
-  upsertMany(entities: (Entity & { id: string })[]): Promise<void>;
+  upsert(
+    entity: Entity & { id: string },
+    options?: { includeSoftDeleted?: boolean }
+  ): Promise<void>;
+  upsertMany(
+    entities: (Entity & { id: string })[],
+    options?: { includeSoftDeleted?: boolean }
+  ): Promise<void>;
 
   delete(id: string): Promise<void>;
   deleteMany(ids: string[]): Promise<void>;
@@ -426,12 +442,12 @@ export function createSmartMongoRepo<
     }
   }
 
-  function applyScopeForWrite(input: any): any {
-    return { ...input, ...scope };
-  }
-
-  function applyScopeForRead(input: any): any {
-    return softDeleteEnabled
+  function applyRepoConstraints(
+    input: any,
+    options?: { includeSoftDeleted?: boolean }
+  ): any {
+    const includeSoftDeleted = options?.includeSoftDeleted ?? false;
+    return softDeleteEnabled && !includeSoftDeleted
       ? { ...input, ...scope, [SOFT_DELETE_KEY]: { $exists: false } }
       : { ...input, ...scope };
   }
@@ -488,7 +504,7 @@ export function createSmartMongoRepo<
     const filtered = Object.fromEntries(
       Object.entries(entityData).filter(([_, value]) => value !== undefined)
     );
-    return applyScopeForWrite({ ...filtered, _id: id ?? generateIdFn() });
+    return { ...filtered, ...scope, _id: id ?? generateIdFn() };
   }
 
   // helper to build MongoDB update operation from set/unset
@@ -546,7 +562,7 @@ export function createSmartMongoRepo<
         ? Object.fromEntries(Object.keys(projection).map((k) => [k, 1]))
         : undefined;
       const doc = await collection.findOne(
-        applyScopeForRead({ _id: id }),
+        applyRepoConstraints({ _id: id }),
         withSessionOptions(
           mongoProjection ? { projection: mongoProjection } : undefined
         )
@@ -563,7 +579,7 @@ export function createSmartMongoRepo<
         : undefined;
       const docs = await collection
         .find(
-          applyScopeForRead({ _id: { $in: ids } }),
+          applyRepoConstraints({ _id: { $in: ids } }),
           withSessionOptions(
             mongoProjection ? { projection: mongoProjection } : undefined
           )
@@ -592,7 +608,7 @@ export function createSmartMongoRepo<
       for (const entityChunk of chunks) {
         const ops = entityChunk.map((e) => {
           const doc = toMongoDoc(e, 'create');
-          const filter = applyScopeForWrite({ _id: doc._id });
+          const filter = applyRepoConstraints({ _id: doc._id });
           const update: any = applyVersion(
             'create',
             applyTimestamps('create', { $setOnInsert: doc })
@@ -610,14 +626,16 @@ export function createSmartMongoRepo<
 
     update: async (
       id: string,
-      update: UpdateOperation<Entity>
+      update: UpdateOperation<Entity>,
+      options?: { includeSoftDeleted?: boolean }
     ): Promise<void> => {
-      await repo.updateMany([id], update);
+      await repo.updateMany([id], update, options);
     },
 
     updateMany: async (
       ids: string[],
-      update: UpdateOperation<Entity>
+      update: UpdateOperation<Entity>,
+      options?: { includeSoftDeleted?: boolean }
     ): Promise<void> => {
       if (ids.length < 1) {
         return;
@@ -629,19 +647,23 @@ export function createSmartMongoRepo<
       for (const idChunk of chunks) {
         const updateOperation = buildUpdateOperation(update);
         await collection.updateMany(
-          applyScopeForWrite({ _id: { $in: idChunk } }),
+          applyRepoConstraints({ _id: { $in: idChunk } }, options),
           updateOperation,
           withSessionOptions()
         );
       }
     },
 
-    upsert: async (entity: Entity & { id: string }): Promise<void> => {
-      await repo.upsertMany([entity]);
+    upsert: async (
+      entity: Entity & { id: string },
+      options?: { includeSoftDeleted?: boolean }
+    ): Promise<void> => {
+      await repo.upsertMany([entity], options);
     },
 
     upsertMany: async (
-      entities: (Entity & { id: string })[]
+      entities: (Entity & { id: string })[],
+      options?: { includeSoftDeleted?: boolean }
     ): Promise<void> => {
       if (entities.length < 1) {
         return;
@@ -653,12 +675,11 @@ export function createSmartMongoRepo<
       for (const entityChunk of chunks) {
         const ops = entityChunk.map((entity) => {
           const doc = toMongoDoc(entity, 'upsert');
-          const filter = applyScopeForWrite({ _id: doc._id });
+          const filter = applyRepoConstraints({ _id: doc._id }, options);
           const update = applyVersion(
             'upsert',
             applyTimestamps('upsert', {
               $set: doc,
-              $unset: { [SOFT_DELETE_KEY]: '' },
             })
           );
           return { updateOne: { filter, update, upsert: true } };
@@ -676,7 +697,7 @@ export function createSmartMongoRepo<
       const chunks = chunk(ids, MONGODB_IN_OPERATOR_MAX_CLAUSES);
 
       for (const idChunk of chunks) {
-        const filter = applyScopeForWrite({ _id: { $in: idChunk } });
+        const filter = applyRepoConstraints({ _id: { $in: idChunk } });
         if (softDeleteEnabled) {
           const updateOperation = applyVersion(
             'delete',
@@ -706,7 +727,7 @@ export function createSmartMongoRepo<
         : undefined;
       const docs = await collection
         .find(
-          applyScopeForRead(mongoFilter),
+          applyRepoConstraints(mongoFilter),
           withSessionOptions(
             mongoProjection ? { projection: mongoProjection } : undefined
           )
@@ -728,7 +749,7 @@ export function createSmartMongoRepo<
       const { id, ...restFilter } = filter;
       const mongoFilter = id ? { _id: id, ...restFilter } : restFilter;
       return await collection.countDocuments(
-        applyScopeForRead(mongoFilter),
+        applyRepoConstraints(mongoFilter),
         withSessionOptions()
       );
     },
@@ -745,11 +766,8 @@ export function createSmartMongoRepo<
     // Repo collection reference
     collection: collection,
 
-    // Adds scope filter and soft-delete filter (if configured)
-    applyScopeForRead: applyScopeForRead,
-
-    // Adds scope filter
-    applyScopeForWrite: applyScopeForWrite,
+    // Adds scope filter and soft-delete filter (if configured), with option to include soft-deleted
+    applyRepoConstraints: applyRepoConstraints,
 
     // Applies enrichments (such as timestamps) and enforces constraints (writing readonly props not allowed)
     buildUpdateOperation: buildUpdateOperation as (

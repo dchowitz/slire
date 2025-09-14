@@ -769,7 +769,7 @@ describe('createSmartMongoRepo', function () {
       expect(raw).not.toHaveProperty('_deleted');
     });
 
-    it('should overwrite soft-deleted entities via upsert', async () => {
+    it('should not overwrite soft-deleted entities by default, but can with includeSoftDeleted option', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
@@ -784,20 +784,71 @@ describe('createSmartMongoRepo', function () {
       // verify it's soft deleted
       expect(await repo.getById(createdId)).toBeNull();
 
-      // upsert should create a new entity (overwriting the soft-deleted one)
+      // normal upsert should not target soft-deleted entity, will try to create new which fails on unique constraint
       const upsertEntity = {
+        id: createdId,
+        ...createTestEntity({ name: 'Should Not Work' }),
+      };
+
+      // This should fail because it tries to create a new entity with existing ID
+      await expect(repo.upsert(upsertEntity)).rejects.toThrow();
+
+      // upsert with includeSoftDeleted: true should work and update the soft-deleted entity
+      const restoringUpsertEntity = {
         id: createdId,
         ...createTestEntity({ name: 'Upserted After Delete' }),
       };
-      await repo.upsert(upsertEntity);
+      await repo.upsert(restoringUpsertEntity, { includeSoftDeleted: true });
 
-      // should be able to retrieve it now
-      const retrieved = await repo.getById(createdId);
-      expect(retrieved).toEqual(upsertEntity);
-
-      // verify the _deleted flag is gone
+      // verify the entity data was updated but is still soft-deleted in DB (no automatic undelete)
       const raw = await rawTestCollection().findOne({ _id: createdId });
-      expect(raw).not.toHaveProperty('_deleted');
+      expect(raw).toHaveProperty('_deleted', true);
+      expect(raw).toMatchObject({ name: 'Upserted After Delete' });
+
+      // the entity should still not appear in normal queries because _deleted is still true
+      const afterUpsert = await repo.getById(createdId);
+      expect(afterUpsert).toBeNull(); // Should still be null because _deleted is still true
+    });
+
+    it('upsertMany should respect soft-delete behavior', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: { softDelete: true },
+      });
+
+      // create and soft-delete some entities
+      const [id1, id2] = await repo.createMany([
+        createTestEntity({ name: 'Entity 1' }),
+        createTestEntity({ name: 'Entity 2' }),
+      ]);
+      await repo.deleteMany([id1, id2]);
+
+      // normal upsertMany should fail for soft-deleted entities (tries to create with existing ID)
+      const normalUpserts = [
+        { id: id1, ...createTestEntity({ name: 'Should Fail 1' }) },
+        { id: id2, ...createTestEntity({ name: 'Should Fail 2' }) },
+      ];
+      await expect(repo.upsertMany(normalUpserts)).rejects.toThrow();
+
+      // upsertMany with includeSoftDeleted should work
+      const includedUpserts = [
+        { id: id1, ...createTestEntity({ name: 'Restored 1' }) },
+        { id: id2, ...createTestEntity({ name: 'Restored 2' }) },
+      ];
+      await repo.upsertMany(includedUpserts, { includeSoftDeleted: true });
+
+      // verify data was updated but entities are still soft-deleted
+      const raw1 = await rawTestCollection().findOne({ _id: id1 });
+      const raw2 = await rawTestCollection().findOne({ _id: id2 });
+      expect(raw1?.name).toBe('Restored 1');
+      expect(raw2?.name).toBe('Restored 2');
+      expect(raw1).toHaveProperty('_deleted', true);
+      expect(raw2).toHaveProperty('_deleted', true);
+
+      // entities should still not appear in normal queries
+      expect(await repo.getById(id1)).toBeNull();
+      expect(await repo.getById(id2)).toBeNull();
     });
   });
 
@@ -1616,6 +1667,70 @@ describe('createSmartMongoRepo', function () {
       expect(raw).toMatchObject({ _deleted: true });
     });
 
+    it('write operations should respect soft-delete by default', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: { softDelete: true },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'Test Entity' }));
+      await repo.delete(id);
+
+      // update should not affect soft-deleted entity
+      await repo.update(id, { set: { name: 'Should Not Update' } });
+      const raw = await rawTestCollection().findOne({ _id: id });
+      expect(raw?.name).not.toBe('Should Not Update');
+      expect(raw?.name).toBe('Test Entity'); // original name
+
+      // updateMany should not affect soft-deleted entities
+      await repo.updateMany([id], { set: { name: 'Should Not Update Many' } });
+      const raw2 = await rawTestCollection().findOne({ _id: id });
+      expect(raw2?.name).not.toBe('Should Not Update Many');
+      expect(raw2?.name).toBe('Test Entity'); // original name
+    });
+
+    it('write operations can target soft-deleted entities with includeSoftDeleted option', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: { softDelete: true },
+      });
+
+      const [id1, id2] = await repo.createMany([
+        createTestEntity({ name: 'Entity 1' }),
+        createTestEntity({ name: 'Entity 2' }),
+      ]);
+      await repo.deleteMany([id1, id2]);
+
+      // update with includeSoftDeleted should work
+      await repo.update(
+        id1,
+        { set: { name: 'Updated Soft Deleted' } },
+        { includeSoftDeleted: true }
+      );
+      const raw1 = await rawTestCollection().findOne({ _id: id1 });
+      expect(raw1?.name).toBe('Updated Soft Deleted');
+      expect(raw1).toHaveProperty('_deleted', true); // still soft-deleted
+
+      // updateMany with includeSoftDeleted should work
+      await repo.updateMany(
+        [id1, id2],
+        { set: { age: 99 } },
+        { includeSoftDeleted: true }
+      );
+      const raw2 = await rawTestCollection().findOne({ _id: id1 });
+      const raw3 = await rawTestCollection().findOne({ _id: id2 });
+      expect(raw2?.age).toBe(99);
+      expect(raw3?.age).toBe(99);
+      expect(raw2).toHaveProperty('_deleted', true); // still soft-deleted
+      expect(raw3).toHaveProperty('_deleted', true); // still soft-deleted
+
+      // entities should still not appear in normal queries
+      expect(await repo.getById(id1)).toBeNull();
+      expect(await repo.getById(id2)).toBeNull();
+    });
+
     it('should not return soft-deleted entities in reads', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
@@ -2229,7 +2344,7 @@ describe('createSmartMongoRepo', function () {
       );
     });
 
-    it('applyScopeForRead', async () => {
+    it('applyRepoConstraints with default behavior', async () => {
       const acmeRepo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
@@ -2293,7 +2408,7 @@ describe('createSmartMongoRepo', function () {
 
       const results = await testCollection()
         .aggregate([
-          { $match: fooRepo.applyScopeForRead({}) },
+          { $match: fooRepo.applyRepoConstraints({}) },
           {
             $group: {
               _id: '$isActive',
@@ -2309,22 +2424,35 @@ describe('createSmartMongoRepo', function () {
       ]);
     });
 
-    it('applyScopeForWrite', async () => {
+    it('applyRepoConstraints with includeSoftDeleted option', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
         scope: { organizationId: 'acme' },
+        options: { softDelete: true },
       });
 
       const id = await repo.create(omit(createTestEntity(), 'organizationId'));
 
-      await repo.collection.updateOne(repo.applyScopeForWrite({ _id: id }), {
-        $set: { _notInModel: 'foo' },
+      // Soft delete the entity
+      await repo.delete(id);
+
+      // Default behavior - should not match soft-deleted entity
+      await repo.collection.updateOne(repo.applyRepoConstraints({ _id: id }), {
+        $set: { _notInModel: 'default' },
       });
 
-      const updated = await repo.collection.findOne({ _id: id });
+      let updated = await repo.collection.findOne({ _id: id });
+      expect(updated).not.toHaveProperty('_notInModel');
 
-      expect(updated).toMatchObject({ _notInModel: 'foo' });
+      // With includeSoftDeleted: true - should match soft-deleted entity
+      await repo.collection.updateOne(
+        repo.applyRepoConstraints({ _id: id }, { includeSoftDeleted: true }),
+        { $set: { _notInModel: 'included' } }
+      );
+
+      updated = await repo.collection.findOne({ _id: id });
+      expect(updated).toMatchObject({ _notInModel: 'included' });
     });
   });
 
