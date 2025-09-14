@@ -2946,6 +2946,349 @@ describe('createSmartMongoRepo', function () {
     });
   });
 
+  describe('stripSystemFields helper', () => {
+    it('should strip _id but preserve id (for upsert compatibility)', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+
+      const entityWithSystemFields = {
+        id: 'test-id',
+        _id: 'mongo-id',
+        name: 'John Doe',
+        email: 'john@example.com',
+        age: 30,
+        organizationId: 'acme',
+        isActive: true,
+      };
+
+      const cleaned = repo.stripSystemFields(entityWithSystemFields);
+
+      expect(cleaned).toEqual({
+        id: 'test-id', // Preserved for upsert compatibility
+        name: 'John Doe',
+        email: 'john@example.com',
+        age: 30,
+        organizationId: 'acme',
+        isActive: true,
+      });
+      expect(cleaned).toHaveProperty('id'); // Preserved
+      expect(cleaned).not.toHaveProperty('_id'); // Stripped
+    });
+
+    it('should strip timestamp fields when timestamps are enabled', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: { traceTimestamps: true },
+      });
+
+      const entityWithTimestamps = {
+        id: 'test-id',
+        name: 'John Doe',
+        _createdAt: new Date(),
+        _updatedAt: new Date(),
+        _deletedAt: new Date(),
+        organizationId: 'acme',
+        isActive: true,
+      };
+
+      const cleaned = repo.stripSystemFields(entityWithTimestamps);
+
+      expect(cleaned).toEqual({
+        id: 'test-id',
+        name: 'John Doe',
+        organizationId: 'acme',
+        isActive: true,
+      });
+      expect(cleaned).not.toHaveProperty('_createdAt');
+      expect(cleaned).not.toHaveProperty('_updatedAt');
+      expect(cleaned).not.toHaveProperty('_deletedAt');
+    });
+
+    it('should strip custom timestamp fields when configured', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: {
+          timestampKeys: {
+            createdAt: 'name', // Use existing field as timestamp field for testing
+            updatedAt: 'email',
+            deletedAt: 'organizationId',
+          },
+        },
+      });
+
+      const entityWithCustomTimestamps = {
+        id: 'test-id',
+        name: 'John Doe', // Will be treated as timestamp field
+        email: 'john@example.com', // Will be treated as timestamp field
+        organizationId: 'acme', // Will be treated as timestamp field
+        age: 30,
+        isActive: true,
+      };
+
+      const cleaned = repo.stripSystemFields(entityWithCustomTimestamps);
+
+      expect(cleaned).toEqual({
+        id: 'test-id',
+        age: 30,
+        isActive: true,
+      });
+      expect(cleaned).not.toHaveProperty('name'); // Stripped as timestamp field
+      expect(cleaned).not.toHaveProperty('email'); // Stripped as timestamp field
+      expect(cleaned).not.toHaveProperty('organizationId'); // Stripped as timestamp field
+    });
+
+    it('should strip version field when versioning is enabled', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: { version: true },
+      });
+
+      const entityWithVersion = {
+        id: 'test-id',
+        name: 'John Doe',
+        _version: 42,
+        organizationId: 'acme',
+        isActive: true,
+      };
+
+      const cleaned = repo.stripSystemFields(entityWithVersion);
+
+      expect(cleaned).toEqual({
+        id: 'test-id',
+        name: 'John Doe',
+        organizationId: 'acme',
+        isActive: true,
+      });
+      expect(cleaned).not.toHaveProperty('_version');
+    });
+
+    it('should strip custom version field when configured', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: { version: 'age' }, // Use existing numeric field
+      });
+
+      const entityWithCustomVersion = {
+        id: 'test-id',
+        name: 'John Doe',
+        age: 30, // Will be treated as version field
+        organizationId: 'acme',
+        isActive: true,
+      };
+
+      const cleaned = repo.stripSystemFields(entityWithCustomVersion);
+
+      expect(cleaned).toEqual({
+        id: 'test-id',
+        name: 'John Doe',
+        organizationId: 'acme',
+        isActive: true,
+      });
+      expect(cleaned).not.toHaveProperty('age'); // Stripped as version field
+    });
+
+    it('should strip soft delete field when soft delete is enabled', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: { softDelete: true },
+      });
+
+      const entityWithSoftDelete = {
+        id: 'test-id',
+        name: 'John Doe',
+        _deleted: true,
+        organizationId: 'acme',
+        isActive: true,
+      };
+
+      const cleaned = repo.stripSystemFields(entityWithSoftDelete);
+
+      expect(cleaned).toEqual({
+        id: 'test-id',
+        name: 'John Doe',
+        organizationId: 'acme',
+        isActive: true,
+      });
+      expect(cleaned).not.toHaveProperty('_deleted');
+    });
+
+    it('should strip all system fields when all features are enabled', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: {
+          traceTimestamps: true,
+          version: true,
+          softDelete: true,
+        },
+      });
+
+      const entityWithAllSystemFields = {
+        id: 'test-id',
+        _id: 'mongo-id',
+        name: 'John Doe',
+        _createdAt: new Date(),
+        _updatedAt: new Date(),
+        _deletedAt: new Date(),
+        _version: 42,
+        _deleted: true,
+        organizationId: 'acme',
+        isActive: true,
+      };
+
+      const cleaned = repo.stripSystemFields(entityWithAllSystemFields);
+
+      expect(cleaned).toEqual({
+        id: 'test-id', // Preserved for upsert compatibility
+        name: 'John Doe',
+        organizationId: 'acme',
+        isActive: true,
+      });
+
+      // Verify system fields are stripped appropriately
+      expect(cleaned).toHaveProperty('id'); // Preserved for upsert
+      expect(cleaned).not.toHaveProperty('_id'); // Stripped
+      expect(cleaned).not.toHaveProperty('_createdAt');
+      expect(cleaned).not.toHaveProperty('_updatedAt');
+      expect(cleaned).not.toHaveProperty('_deletedAt');
+      expect(cleaned).not.toHaveProperty('_version');
+      expect(cleaned).not.toHaveProperty('_deleted');
+    });
+
+    it('should work with create operation', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: {
+          traceTimestamps: true,
+          version: true,
+        },
+      });
+
+      const domainEntity = {
+        id: 'should-be-ignored',
+        name: 'John Doe',
+        email: 'john@example.com',
+        age: 30,
+        _createdAt: new Date('2020-01-01'), // should be ignored
+        _version: 999, // should be ignored
+        organizationId: 'acme',
+        isActive: true,
+      };
+
+      // Using the helper makes it easy to create
+      const cleanEntity = repo.stripSystemFields(domainEntity);
+      const id = await repo.create(cleanEntity);
+
+      // Get the saved entity from MongoDB directly to check system fields
+      const saved = await repo.collection.findOne({ _id: id });
+      expect(saved).toBeDefined();
+      expect(saved!.name).toBe('John Doe');
+      expect(saved!._createdAt).toBeDefined(); // System-generated, not the one we passed
+      expect(saved!._createdAt).not.toEqual(new Date('2020-01-01'));
+      expect(saved!._version).toBe(1); // System-generated, not 999
+    });
+
+    it('should work with upsert operation (preserves id)', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: {
+          traceTimestamps: true,
+          version: true,
+        },
+      });
+
+      const domainEntity = {
+        id: 'upsert-test-id',
+        name: 'Jane Smith',
+        email: 'jane@example.com',
+        age: 25,
+        _createdAt: new Date('2020-01-01'), // should be ignored
+        _version: 999, // should be ignored
+        organizationId: 'acme',
+        isActive: true,
+      };
+
+      // Using the helper preserves id for upsert
+      const cleanEntity = repo.stripSystemFields(domainEntity);
+      expect(cleanEntity.id).toBe('upsert-test-id'); // Preserved for upsert
+
+      await repo.upsert(cleanEntity); // Works because id is preserved
+
+      // Verify it was created with system-managed fields
+      const saved = await repo.collection.findOne({ _id: 'upsert-test-id' });
+      expect(saved).toBeDefined();
+      expect(saved!.name).toBe('Jane Smith');
+      expect(saved!._createdAt).toBeDefined(); // System-generated
+      expect(saved!._version).toBe(1); // System-generated, not 999
+    });
+
+    it('should verify create always generates new ID and ignores provided id', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+
+      // Try to create with a specific id - should be ignored
+      const entityWithId = {
+        name: 'Test User',
+        email: 'test@example.com',
+        age: 30,
+        organizationId: 'acme',
+        isActive: true,
+        id: 'should-be-ignored', // This should be ignored by create
+      }; // Cast needed since Entity type excludes id
+
+      const generatedId = await repo.create(entityWithId);
+
+      // The returned ID should NOT be the one we provided
+      expect(generatedId).not.toBe('should-be-ignored');
+      expect(generatedId).toBeDefined();
+      expect(typeof generatedId).toBe('string');
+
+      // Verify the entity was saved with the generated ID, not the provided one
+      const saved = await repo.getById(generatedId);
+      expect(saved).toBeDefined();
+      expect(saved!.name).toBe('Test User');
+
+      // Verify no entity was created with the provided ID
+      const notSaved = await repo.getById('should-be-ignored');
+      expect(notSaved).toBeNull();
+    });
+
+    it('should verify upsert uses provided id', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+
+      const entityWithId = {
+        id: 'specific-upsert-id',
+        name: 'Upsert User',
+        email: 'upsert@example.com',
+        age: 25,
+        organizationId: 'acme',
+        isActive: true,
+      };
+
+      await repo.upsert(entityWithId);
+
+      // Verify the entity was saved with the exact ID we provided
+      const saved = await repo.getById('specific-upsert-id');
+      expect(saved).toBeDefined();
+      expect(saved!.name).toBe('Upsert User');
+      expect(saved!.id).toBe('specific-upsert-id');
+    });
+  });
+
   describe('configuration validation', () => {
     it('should throw error when timestamp keys are duplicated', () => {
       expect(() => {

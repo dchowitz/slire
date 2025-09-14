@@ -174,6 +174,11 @@ export type SmartRepo<
 
   count(filter: Partial<T>): Promise<number>;
   countBySpec<S extends Specification<T>>(spec: S): Promise<number>;
+
+  // Helper to strip system-managed fields from entities (preserves id for upsert compatibility)
+  stripSystemFields<U extends Record<string, unknown>>(
+    entity: U
+  ): Omit<U, '_id'>;
 };
 
 // Specification pattern types
@@ -527,7 +532,13 @@ export function createSmartMongoRepo<
     validateNoReadonly(Object.keys(entityData), op);
     validateScopeProperties(entityData, op);
     const filtered = deepFilterUndefined(entityData);
-    return { ...filtered, ...scope, _id: id ?? generateIdFn() };
+
+    // For create operations, always generate new ID regardless of input
+    // For upsert operations, use provided ID (required by type system)
+    // For other operations, fallback behavior
+    const mongoId = op === 'create' ? generateIdFn() : id ?? generateIdFn();
+
+    return { ...filtered, ...scope, _id: mongoId };
   }
 
   // helper to build MongoDB update operation from set/unset
@@ -815,6 +826,32 @@ export function createSmartMongoRepo<
           return operation(txRepo as SmartRepo<T, Scope, Entity>);
         });
       });
+    },
+
+    // Helper to strip system-managed fields from entities for easier create/upsert operations
+    stripSystemFields: <U extends Record<string, unknown>>(
+      entity: U
+    ): Omit<U, '_id'> => {
+      const { _id, ...cleanEntity } = entity;
+
+      // Remove timestamp fields if configured
+      if (effectiveTraceTimestamps) {
+        delete (cleanEntity as any)[CREATED_KEY];
+        delete (cleanEntity as any)[UPDATED_KEY];
+        delete (cleanEntity as any)[DELETED_KEY];
+      }
+
+      // Remove version field if configured
+      if (versionEnabled) {
+        delete (cleanEntity as any)[VERSION_KEY];
+      }
+
+      // Remove soft delete field if configured
+      if (softDeleteEnabled) {
+        delete (cleanEntity as any)[SOFT_DELETE_KEY];
+      }
+
+      return cleanEntity as Omit<U, '_id'>;
     },
   };
 

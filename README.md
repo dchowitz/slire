@@ -13,6 +13,7 @@
   - [delete](#delete) - [deleteMany](#deletemany)
   - [find](#find) - [findBySpec](#findbyspec)
   - [count](#count) - [countBySpec](#countbyspec)
+  - [stripSystemFields](#stripsystemfields)
 - [MongoDB Implementation](#mongodb-implementation)
   - [createSmartMongoRepo](#createsmartmongorepo)
   - [withSession](#withsession)
@@ -20,6 +21,7 @@
   - [collection](#collection)
   - [applyConstraints](#applyconstraints)
   - [buildUpdateOperation](#buildupdateoperation)
+  - [stripSystemFields](#stripsystemfields-1)
 - [Recommended Usage Patterns](#recommended-usage-patterns)
   - [Repository Factories](#repository-factories)
   - [Export Repository Types](#export-repository-types)
@@ -352,6 +354,12 @@ Returns the number of entities that match the provided filter criteria. Like `fi
 
 Returns the number of entities that match the provided specification. Like `count`, the repository automatically applies scope filtering and soft delete exclusion. This method works with the same specification objects used by `findBySpec`, enabling consistent query logic across find and count operations. Returns 0 if no matching entities are found.
 
+### stripSystemFields
+
+`stripSystemFields<U>(entity: U): Omit<U, '_id'>`
+
+Helper method that removes system-managed fields from an entity object, making it ready for `create` or `upsert` operations. Strips exactly the fields configured for this repository instance (timestamps, version, soft delete) while preserving the `id` field needed for upsert operations. See the MongoDB-specific implementation section for detailed usage examples and behavior.
+
 ## MongoDB Implementation
 
 The MongoDB implementation provides additional functionality beyond the core SmartRepo interface. This includes the factory function for creating repositories, transaction support methods, and helper functions that enable direct MongoDB operations while maintaining the repository's consistency rules and scoping behavior. These MongoDB-specific features are essential for advanced use cases where the generic interface isn't sufficient, but you still want the benefits of automatic scope filtering, timestamps, and other repository features.
@@ -453,6 +461,52 @@ Helper method that applies the repository's scope filtering to a given filter ob
 `buildUpdateOperation(update: UpdateOperation<any>): any`
 
 Helper method that transforms a repository update operation into a MongoDB-compliant update document with all configured consistency features applied. Takes an `UpdateOperation` with `set` and/or `unset` fields and automatically adds timestamps (like `updatedAt`), version increments, and any other configured repository features. This ensures that direct collection operations maintain the same consistency behavior as the repository's built-in update methods. Essential when performing direct `updateOne`, `updateMany`, or `bulkWrite` operations on the collection.
+
+### stripSystemFields
+
+`stripSystemFields<U>(entity: U): Omit<U, '_id'>`
+
+Helper method that removes system-managed fields from an entity object, making it ready for `create` or `upsert` operations. The method is context-aware and strips exactly the fields configured for this repository instance:
+
+- **Always removed**: `_id` (MongoDB internal identifier)
+- **Always preserved**: `id` (user-facing identifier, needed for upsert operations)
+- **Conditionally removed** (based on repository configuration):
+  - Timestamp fields: `_createdAt`, `_updatedAt`, `_deletedAt` (or custom names)
+  - Version field: `_version` (or custom name)
+  - Soft delete field: `_deleted`
+
+This helper simplifies working with domain objects that might include system fields, eliminating the need for manual field stripping while maintaining compatibility with both `create` and `upsert` operations.
+
+```typescript
+const repo = createSmartMongoRepo({
+  collection: userCollection,
+  mongoClient,
+  options: { traceTimestamps: true, version: true },
+});
+
+// Domain object with system fields
+const domainUser = {
+  id: 'user-123',
+  name: 'John Doe',
+  email: 'john@example.com',
+  _createdAt: new Date('2020-01-01'), // System field - will be stripped
+  _version: 42, // System field - will be stripped
+};
+
+// Clean for repository operations - works with both create and upsert
+const cleanUser = repo.stripSystemFields(domainUser);
+
+// Create operation (ignores the id field)
+const newId = await repo.create(cleanUser);
+
+// Upsert operation (uses the preserved id field)
+await repo.upsert(cleanUser);
+
+// System fields are automatically managed by the repository
+const saved = await repo.getById(cleanUser.id);
+console.log(saved._createdAt); // Current timestamp, not 2020-01-01
+console.log(saved._version); // System-managed, not 42
+```
 
 ## Recommended Usage Patterns
 
