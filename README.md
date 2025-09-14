@@ -18,8 +18,7 @@
   - [withSession](#withsession)
   - [runTransaction](#runtransaction)
   - [collection](#collection)
-  - [applyScopeForRead](#applyscopeforread)
-  - [applyScopeForWrite](#applyscopeforwrite)
+  - [applyRepoConstraints](#applyrepoconstraints)
   - [buildUpdateOperation](#buildupdateoperation)
 - [Recommended Usage Patterns](#recommended-usage-patterns)
   - [Repository Factories](#repository-factories)
@@ -158,7 +157,7 @@ export async function markTopExpenses({
       // remove marker from all current top expenses
       await repo.collection.updateMany(
         // -> a repo instance exposes the underlying collection
-        repo.applyScopeForWrite({ currency, [TOP_MARKER]: true }), // -> applyScopeForWrite ensures org scope
+        repo.applyRepoConstraints({ currency, [TOP_MARKER]: true }), // -> applyRepoConstraints ensures org scope
         repo.buildUpdateOperation({ unset: { [TOP_MARKER]: 1 } }), // -> applies timestamps etc. if configured
         { session }
       );
@@ -167,7 +166,7 @@ export async function markTopExpenses({
       const topExpenses = await repo.collection
         .aggregate<{ expenseId: string }>(
           [
-            { $match: repo.applyScopeForRead({ currency }) }, // -> applyScopeForRead ensures org scope
+            { $match: repo.applyRepoConstraints({ currency }) }, // -> applyRepoConstraints ensures org scope and excludes soft-deleted
             { $sort: { category: 1, totalClaim: -1 } },
             { $group: { _id: '$categoryId', expenseId: { $first: '$_id' } } },
           ],
@@ -179,7 +178,7 @@ export async function markTopExpenses({
       await repo.collection.bulkWrite(
         topExpenses.map((e) => ({
           updateOne: {
-            filter: repo.applyScopeForWrite({ _id: e.expenseId }), // -> again, ensure org scope
+            filter: repo.applyRepoConstraints({ _id: e.expenseId }), // -> again, ensure org scope
             update: repo.buildUpdateOperation({ set: { [TOP_MARKER]: true } }), // -> applies timestamps etc. if configured
           },
         })),
@@ -289,27 +288,27 @@ Bulk version of `create` that creates multiple entities in a single operation. R
 
 ### update
 
-`update(id: string, update: UpdateOperation<Entity>): Promise<void>`
+`update(id: string, update: UpdateOperation<Entity>, options?: { includeSoftDeleted?: boolean }): Promise<void>`
 
-Updates a single entity identified by its ID. The update operation supports both `set` (to update fields) and `unset` (to remove optional fields) operations, which can be used individually or combined. The repository automatically applies scope filtering to ensure only entities within the current scope can be updated. Any configured timestamps (like `updatedAt`) or versioning increments are applied automatically. No error is thrown if the entity doesn't exist or doesn't match the scope.
+Updates a single entity identified by its ID. The update operation supports both `set` (to update fields) and `unset` (to remove optional fields) operations, which can be used individually or combined. The repository automatically applies scope filtering and excludes soft-deleted entities by default to ensure only active entities within the current scope can be updated. Use the `includeSoftDeleted: true` option to allow updating soft-deleted entities. Any configured timestamps (like `updatedAt`) or versioning increments are applied automatically. No error is thrown if the entity doesn't exist or doesn't match the scope.
 
 ### updateMany
 
-`updateMany(ids: string[], update: UpdateOperation<Entity>): Promise<void>`
+`updateMany(ids: string[], update: UpdateOperation<Entity>, options?: { includeSoftDeleted?: boolean }): Promise<void>`
 
-Bulk version of `update` that applies the same update operation to multiple entities identified by their IDs. All entities are subject to the same scope filtering, timestamp updates, and versioning as the single `update` function. The operation succeeds even if some of the provided IDs don't exist or don't match the scope - only the valid, in-scope entities will be updated.
+Bulk version of `update` that applies the same update operation to multiple entities identified by their IDs. All entities are subject to the same scope filtering (including soft-delete exclusion by default) and can accept the same `includeSoftDeleted` option. Timestamp updates and versioning behavior are identical to the single `update` function. The operation succeeds even if some of the provided IDs don't exist or don't match the scope - only the valid, in-scope entities will be updated.
 
 ### upsert
 
-`upsert(entity: Entity & { id: string }): Promise<void>`
+`upsert(entity: Entity & { id: string }, options?: { includeSoftDeleted?: boolean }): Promise<void>`
 
-Inserts a new entity if it doesn't exist, or updates an existing entity if it does exist, based on the provided ID. Unlike `create`, the entity must include an `id` field. The repository applies scope filtering during both the existence check and the actual operation. For inserts, automatic timestamps (like `createdAt`) and initial versioning are applied. For updates, only update-related timestamps (like `updatedAt`) and version increments are applied. If an entity exists but is out of scope, it will be treated as non-existent and a new entity will be created. Note that when the repository is configured with a custom ID generator, the user is responsible for providing correct IDs that conform to the generator's format.
+Inserts a new entity if it doesn't exist, or updates an existing entity if it does exist, based on the provided ID. Unlike `create`, the entity must include an `id` field. The repository applies scope filtering and excludes soft-deleted entities by default during both the existence check and the actual operation. Use the `includeSoftDeleted: true` option to target soft-deleted entities for updates. For inserts, automatic timestamps (like `createdAt`) and initial versioning are applied. For updates, only update-related timestamps (like `updatedAt`) and version increments are applied. If an entity exists but is out of scope (or is soft-deleted without the option), it will be treated as non-existent and a new entity will be attempted to be created, which may fail due to unique constraints. Note that when the repository is configured with a custom ID generator, the user is responsible for providing correct IDs that conform to the generator's format.
 
 ### upsertMany
 
-`upsertMany(entities: (Entity & { id: string })[]): Promise<void>`
+`upsertMany(entities: (Entity & { id: string })[], options?: { includeSoftDeleted?: boolean }): Promise<void>`
 
-Bulk version of `upsert` that performs insert-or-update operations on multiple entities in a single call. Each entity is processed independently with the same logic as the single `upsert` function. This provides better performance than multiple individual upsert calls while maintaining the same consistency guarantees and scope filtering behavior.
+Bulk version of `upsert` that performs insert-or-update operations on multiple entities in a single call. Each entity is processed independently with the same logic and options support as the single `upsert` function, including the same soft-delete filtering behavior and `includeSoftDeleted` option. This provides better performance than multiple individual upsert calls while maintaining the same consistency guarantees and scope filtering behavior.
 
 ### delete
 
@@ -403,21 +402,15 @@ This method is best suited for simple scenarios where the provided transaction-a
 
 `collection: Collection<any>`
 
-Direct access to the underlying MongoDB collection instance. This property allows you to perform advanced MongoDB operations that aren't covered by the SmartRepo interface, such as aggregations, complex queries, bulk operations, or any other collection-level methods. When using the collection directly, you can still leverage the repository's helper methods (`applyScopeForRead`, `applyScopeForWrite`, `buildUpdateOperation`) to maintain consistency with the repository's configured scoping, timestamps, and versioning behavior.
+Direct access to the underlying MongoDB collection instance. This property allows you to perform advanced MongoDB operations that aren't covered by the SmartRepo interface, such as aggregations, complex queries, bulk operations, or any other collection-level methods. When using the collection directly, you can still leverage the repository's helper methods (`applyRepoConstraints`, `buildUpdateOperation`) to maintain consistency with the repository's configured scoping, timestamps, and versioning behavior.
 
-### applyScopeForRead
+### applyRepoConstraints
 
-`applyScopeForRead(input: any): any`
+`applyRepoConstraints(input: any, options?: { includeSoftDeleted?: boolean }): any`
 
-Helper method that applies the repository's scope filtering to a given filter object for read operations. Takes your custom filter criteria and merges it with the repository's configured scope (e.g., organizationId filter) and any additional read-specific filters (like soft delete exclusion). This ensures that direct collection operations maintain the same data isolation and filtering behavior as the repository's built-in methods. Essential when performing custom queries, aggregations, or other read operations directly on the collection.
+Helper method that applies the repository's scope filtering to a given filter object. Takes your custom filter criteria and merges it with the repository's configured scope (e.g., organizationId filter) and, by default, soft delete exclusion (if soft-delete is enabled) to ensure operations only target entities within the repository's scope that haven't been soft-deleted. Use the `includeSoftDeleted: true` option to include soft-deleted entities in the filter. Essential for maintaining data isolation when performing direct queries, updates, deletes, aggregations, or bulk operations on the collection.
 
-### applyScopeForWrite
-
-`applyScopeForWrite(input: any): any`
-
-Helper method that applies the repository's scope filtering to a given filter object for write operations. Takes your custom filter criteria and merges it with the repository's configured scope (e.g., organizationId filter) to ensure write operations only affect entities within the repository's scope. Unlike `applyScopeForRead`, this method does not apply soft delete exclusion, allowing write operations to target soft-deleted entities when needed. Essential for maintaining data isolation when performing direct updates, deletes, or bulk operations on the collection.
-
-Note that the behavioral difference between `applyScopeForRead` and `applyScopeForWrite` regarding soft delete filtering is currently under investigation and may change in the future. `applyScopeForWrite` might be updated to also include the soft delete filter for consistency or both functions will be consolidated into one.
+This function consolidates the behavior previously split between `applyScopeForRead` and `applyScopeForWrite`, providing consistent filtering with explicit control over soft-delete inclusion.
 
 ### buildUpdateOperation
 
@@ -499,9 +492,15 @@ Reasons to derive repository types from factory functions:
 When performing operations directly on `repo.collection`, always use the provided helper methods to maintain repository behavior:
 
 ```typescript
-// ✅ GOOD - uses helper methods
+// ✅ GOOD - uses helper methods (excludes soft-deleted by default)
 await repo.collection.updateMany(
-  repo.applyScopeForWrite({ status: 'active' }),
+  repo.applyRepoConstraints({ status: 'active' }),
+  repo.buildUpdateOperation({ set: { processed: true } })
+);
+
+// ✅ ALSO GOOD - explicitly include soft-deleted entities when needed
+await repo.collection.updateMany(
+  repo.applyRepoConstraints({ status: 'active' }, { includeSoftDeleted: true }),
   repo.buildUpdateOperation({ set: { processed: true } })
 );
 
@@ -956,7 +955,7 @@ export async function markTopExpenses({
       const topExpenses = await repo.collection
         .aggregate<{ expenseId: string }>(
           [
-            { $match: repo.applyScopeForRead({ currency }) },
+            { $match: repo.applyRepoConstraints({ currency }) },
             { $sort: { category: 1, totalClaim: -1 } },
             { $group: { _id: '$categoryId', expenseId: { $first: '$_id' } } },
           ],
@@ -968,7 +967,7 @@ export async function markTopExpenses({
       await repo.collection.bulkWrite(
         topExpenses.map((e) => ({
           updateOne: {
-            filter: repo.applyScopeForWrite({ _id: e.expenseId }),
+            filter: repo.applyRepoConstraints({ _id: e.expenseId }),
             update: repo.buildUpdateOperation({ set: { [TOP_MARKER]: true } }),
           },
         })),
@@ -1807,7 +1806,9 @@ async function runExpenseCleanupJobOptimized(organizationId: string) {
   const repo = createExpenseRepo(mongoClient, { organizationId });
 
   // MongoDB-specific: efficient single deleteMany operation
-  const filter = repo.applyScopeForWrite(createStaleExpenseSpec(30).toFilter());
+  const filter = repo.applyRepoConstraints(
+    createStaleExpenseSpec(30).toFilter()
+  );
   const result = await repo.collection.deleteMany(filter);
 
   logger.info(`Cleaned up ${result.deletedCount} stale expenses`);
