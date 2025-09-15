@@ -42,36 +42,47 @@ type UpdateOperation<T> =
 
 type ScopeKeys<T, Scope extends Partial<T>> = Extract<keyof Scope, keyof T>;
 
-// utility type to extract configured timestamp keys from the config
-type TimestampKeys<
-  T,
-  Config extends TimestampConfig<T> | undefined
-> = Config extends TimestampConfig<T>
-  ? Extract<Config[keyof Config], keyof T>
-  : never;
+export type RepositoryConfig<T> = {
+  generateId?: () => string;
+  softDelete?: boolean;
+  traceTimestamps?: true | 'mongo' | (() => Date); // TODO - rename 'mongo' -> 'server'
+  timestampKeys?: TimestampConfig<T>;
+  version?: true | NumberKeys<T>;
+};
 
-// utility type to extract version key from version config
-type VersionKey<
-  T,
-  Config extends true | NumberKeys<T> | undefined
-> = Config extends NumberKeys<T> ? Config : never;
+// Repo-managed fields part of T (based on repository configuration).
+export type ManagedFields<T, Config extends RepositoryConfig<T>> =
+  | 'id'
+  | (Config['softDelete'] extends true
+      ? Extract<typeof SOFT_DELETE_KEY, keyof T>
+      : never)
+  | (Config['traceTimestamps'] extends undefined
+      ? never
+      : Extract<
+          | typeof DEFAULT_CREATED_AT_KEY
+          | typeof DEFAULT_UPDATED_AT_KEY
+          | typeof DEFAULT_DELETED_AT_KEY,
+          keyof T
+        >)
+  | (Config['timestampKeys'] extends undefined
+      ? never
+      : Extract<
+          Config['timestampKeys'][keyof Config['timestampKeys']],
+          keyof T
+        >)
+  | (Config['version'] extends true
+      ? Extract<typeof DEFAULT_VERSION_KEY, keyof T>
+      : never)
+  | (Config['version'] extends keyof T
+      ? Extract<Config['version'], keyof T>
+      : never);
 
-// Simplified but still precise approach: Extract system fields that exist in T
-type SystemFieldsInT<T> = Extract<
-  | typeof SOFT_DELETE_KEY
-  | typeof DEFAULT_VERSION_KEY
-  | typeof DEFAULT_CREATED_AT_KEY
-  | typeof DEFAULT_UPDATED_AT_KEY
-  | typeof DEFAULT_DELETED_AT_KEY,
-  keyof T
->;
-
-// utility type for input entities - makes system fields optional if they exist in T
-type InputEntity<T extends { id?: string }> = Omit<
-  T,
-  SystemFieldsInT<T> | 'id'
-> &
-  Partial<Pick<T, SystemFieldsInT<T>>> & { id?: string };
+// // Input entity type - makes only actually configured managed fields optional
+// type InputEntity<
+//   T extends { id?: string },
+//   Config extends RepositoryConfig<T> = RepositoryConfig<T>
+// > = Omit<T, ManagedFields<T, Config> | 'id'> &
+//   Partial<Pick<T, ManagedFields<T, Config>>> & { id?: string };
 
 const SOFT_DELETE_KEY = '_deleted';
 const DEFAULT_VERSION_KEY = '_version';
@@ -82,26 +93,34 @@ const DEFAULT_DELETED_AT_KEY = '_deletedAt';
 // MongoDB repository type with additional MongoDB-specific helpers and transaction methods
 type MongoRepo<
   T extends { id: string },
-  Scope extends Partial<T>,
-  Entity extends Record<string, unknown>
-> = SmartRepo<T, Scope, Entity> & {
+  Config extends RepositoryConfig<T> = {},
+  Managed extends ManagedFields<T, Config> = ManagedFields<T, Config>,
+  InputEntity extends Record<string, unknown> = Omit<T, Managed> &
+    Partial<Pick<T, Managed>>
+> = SmartRepo<T, Config, Managed, InputEntity> & {
   collection: Collection<any>;
   applyConstraints: (
     input: any,
     options?: { includeSoftDeleted?: boolean }
   ) => any;
   buildUpdateOperation: (update: UpdateOperation<any>) => any;
-  withSession(session: ClientSession): MongoRepo<T, Scope, Entity>;
+  withSession(
+    session: ClientSession
+  ): MongoRepo<T, Config, Managed, InputEntity>;
   runTransaction<R>(
-    operation: (txRepo: SmartRepo<T, Scope, Entity>) => Promise<R>
+    operation: (
+      txRepo: SmartRepo<T, Config, Managed, InputEntity>
+    ) => Promise<R>
   ): Promise<R>;
 };
 
 // database-agnostic interface (limited to simple CRUD operations)
 export type SmartRepo<
   T extends { id: string },
-  Scope extends Partial<T> = {},
-  Entity extends Record<string, unknown> = Omit<T, 'id'>
+  Config extends RepositoryConfig<T> = {},
+  Managed extends ManagedFields<T, Config> = ManagedFields<T, Config>,
+  InputEntity extends Record<string, unknown> = Omit<T, Managed> &
+    Partial<Pick<T, Managed>>
 > = {
   getById(id: string): Promise<T | null>;
   getById<P extends Projection<T>>(
@@ -114,26 +133,26 @@ export type SmartRepo<
     projection: P
   ): Promise<[Projected<T, P>[], string[]]>;
 
-  create(entity: InputEntity<T>): Promise<string>;
-  createMany(entities: InputEntity<T>[]): Promise<string[]>;
+  create(entity: InputEntity): Promise<string>;
+  createMany(entities: InputEntity[]): Promise<string[]>;
 
   update(
     id: string,
-    update: UpdateOperation<Omit<Entity, ScopeKeys<T, Scope>>>,
+    update: UpdateOperation<InputEntity>,
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
   updateMany(
     ids: string[],
-    update: UpdateOperation<Omit<Entity, ScopeKeys<T, Scope>>>,
+    update: UpdateOperation<InputEntity>,
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
 
   upsert(
-    entity: InputEntity<T>,
+    entity: InputEntity,
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
   upsertMany(
-    entities: InputEntity<T>[],
+    entities: InputEntity[],
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
 
@@ -214,34 +233,25 @@ export function combineSpecs<T>(
  */
 export function createSmartMongoRepo<
   T extends { id: string },
-  Scope extends Partial<T> = {},
-  TsConfig extends TimestampConfig<T> | undefined = undefined,
-  VersionConfig extends true | NumberKeys<T> | undefined = undefined,
-  Entity extends Record<string, unknown> = Omit<
-    T,
-    'id' | TimestampKeys<T, TsConfig> | VersionKey<T, VersionConfig>
-  >
+  Config extends RepositoryConfig<T> = {},
+  Managed extends ManagedFields<T, Config> = ManagedFields<T, Config>,
+  InputEntity extends Record<string, unknown> = Omit<T, Managed> &
+    Partial<Pick<T, Managed>>
 >({
   collection,
   mongoClient,
-  scope = {} as Scope,
+  scope = {},
   options,
+  session,
 }: {
   collection: Collection<T>;
   mongoClient: MongoClient;
-  scope?: Scope;
-  options?: {
-    generateId?: () => string;
-    softDelete?: boolean;
-    traceTimestamps?: true | 'mongo' | (() => Date);
-    timestampKeys?: TsConfig;
-    version?: VersionConfig;
-    session?: ClientSession;
-  };
-}): MongoRepo<T, Scope, Entity> {
+  scope?: Partial<T>;
+  options?: Config;
+  session?: ClientSession;
+}): MongoRepo<T, Config, Managed, InputEntity> {
   const configuredKeys: string[] = [];
   const generateIdFn = options?.generateId ?? uuidv4;
-  const session = options?.session;
   const softDeleteEnabled = options?.softDelete === true;
   const timestampKeys = options?.timestampKeys;
 
@@ -499,7 +509,7 @@ export function createSmartMongoRepo<
 
   // helper to map entity to Mongo doc, omitting all undefined properties and system fields (system fields auto-managed)
   function toMongoDoc(
-    entity: InputEntity<T> & { id?: string },
+    entity: InputEntity,
     op: 'create' | 'update' | 'upsert' | 'delete' | 'unset'
   ): any {
     const { id, ...entityData } = entity;
@@ -523,6 +533,7 @@ export function createSmartMongoRepo<
   }
 
   // helper to build MongoDB update operation from set/unset
+  // TODO - typing - why not InputEntity?
   function buildUpdateOperation<U>(update: UpdateOperation<U>): any {
     const { set, unset } = update;
     const mongoUpdate: any = {}; // cast to any due to MongoDB's complex UpdateFilter type system
@@ -561,7 +572,7 @@ export function createSmartMongoRepo<
     return session ? { ...mongoOptions, session } : mongoOptions;
   }
 
-  const repo: MongoRepo<T, Scope, Entity> = {
+  const repo: MongoRepo<T, Config, Managed, InputEntity> = {
     getById: async <P extends Projection<T>>(
       id: string,
       projection?: P
@@ -599,12 +610,12 @@ export function createSmartMongoRepo<
       return [foundDocs, notFoundIds];
     },
 
-    create: async (entity: InputEntity<T>): Promise<string> => {
+    create: async (entity: InputEntity): Promise<string> => {
       const ids = await repo.createMany([entity]);
       return ids[0];
     },
 
-    createMany: async (entities: InputEntity<T>[]): Promise<string[]> => {
+    createMany: async (entities: InputEntity[]): Promise<string[]> => {
       if (entities.length < 1) {
         return [];
       }
@@ -634,7 +645,7 @@ export function createSmartMongoRepo<
 
     update: async (
       id: string,
-      update: UpdateOperation<Omit<Entity, ScopeKeys<T, Scope>>>,
+      update: UpdateOperation<InputEntity>,
       options?: { includeSoftDeleted?: boolean }
     ): Promise<void> => {
       await repo.updateMany([id], update as any, options);
@@ -642,7 +653,7 @@ export function createSmartMongoRepo<
 
     updateMany: async (
       ids: string[],
-      update: UpdateOperation<Omit<Entity, ScopeKeys<T, Scope>>>,
+      update: UpdateOperation<InputEntity>,
       options?: { includeSoftDeleted?: boolean }
     ): Promise<void> => {
       if (ids.length < 1) {
@@ -663,14 +674,14 @@ export function createSmartMongoRepo<
     },
 
     upsert: async (
-      entity: InputEntity<T>,
+      entity: InputEntity,
       options?: { includeSoftDeleted?: boolean }
     ): Promise<void> => {
       await repo.upsertMany([entity], options);
     },
 
     upsertMany: async (
-      entities: InputEntity<T>[],
+      entities: InputEntity[],
       options?: { includeSoftDeleted?: boolean }
     ): Promise<void> => {
       if (entities.length < 1) {
@@ -794,7 +805,9 @@ export function createSmartMongoRepo<
 
     // Convenience method for running multiple repo functions in a transaction
     runTransaction: async <R>(
-      operation: (txRepo: SmartRepo<T, Scope, Entity>) => Promise<R>
+      operation: (
+        txRepo: SmartRepo<T, Config, Managed, InputEntity>
+      ) => Promise<R>
     ): Promise<R> => {
       return mongoClient.withSession(async (clientSession) => {
         return clientSession.withTransaction(async () => {
@@ -804,7 +817,9 @@ export function createSmartMongoRepo<
             scope,
             options: { ...options, session: clientSession },
           });
-          return operation(txRepo as SmartRepo<T, Scope, Entity>);
+          return operation(
+            txRepo as SmartRepo<T, Config, Managed, InputEntity>
+          );
         });
       });
     },
