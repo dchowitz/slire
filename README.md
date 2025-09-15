@@ -252,49 +252,64 @@ This approach emerged organically from observing teams repeatedly writing the sa
 The operations listed here resemble the full set of DB-agnostic functions in a SmartRepo. At time of writing only the MongoDB implementation existed. So some descriptions might mention some characteristics specific to MongoDB. However, the interface is designed to
 be as simple as possible to allow being implemented for other DBs, particularly Firestore.
 
-**Note 1**: In the function signatures below, `T` represents the entity type, `UpdateInput` represents the subset of `T` that can be modified via updates (excluding managed fields), and `CreateInput` represents the input shape for creating entities (includes optional managed fields).
+**Note 1**: In the function signatures below, `T` represents the entity type, `UpdateInput` represents the subset of `T` that can be modified via updates (excluding managed fields), and `CreateInput` represents the input shape for creating entities (includes optional managed fields). Managed fields include system fields (id, timestamps, version, soft-delete markers) and scope fields.
 
 **Note 2**: All read functions support projections. A projection is given in the form `{ propA: true, propB: true }` where `propA` and `propB` are valid properties in `T`. A projection is properly reflected in the return type.
 
+!! TODO - rephrase / clarify
 **Note 3**: Scope filtering and other consistence features are not part of this interface as they are basically repository options that get only mentioned during instantiation. However, they might be mentioned in the function descriptions describing the intended behavior as part of the interface contract any implemention must adhere to.
 
 #### Input Type Distinction
 
 SmartRepo uses distinct input types for different operations to provide compile-time safety:
 
-- **`UpdateInput`**: Used for update operations - excludes all system-managed fields (timestamps, version, id, soft-delete markers). This prevents accidental modification of fields that should be automatically managed.
-- **`CreateInput`**: Used for create/upsert operations - includes all `UpdateInput` fields plus optional system-managed fields. The managed fields are allowed purely as a convenience feature so you don't have to manually strip them from objects, but they are ignored internally. The repository always auto-generates its own managed fields.
+- **`UpdateInput`**: Used for update operations - excludes all managed fields (system fields like timestamps/version/id, plus scope fields). This prevents accidental modification of fields that should be repository-controlled.
+- **`CreateInput`**: Used for create/upsert operations - includes all `UpdateInput` fields plus optional managed fields. The managed fields are allowed purely as a convenience feature so you don't have to manually strip them from objects. System fields (timestamps, version, id) are ignored internally and auto-generated. Scope fields are validated to match the repository's configured scope values - mismatches cause the operation to fail.
 
-The relationship: `CreateInput = UpdateInput & Partial<ManagedFields>`. This design ensures updates are strict while creation accepts but ignores managed fields for developer convenience.
+The relationship: `CreateInput = UpdateInput & Partial<ManagedFields>`. This design ensures updates are strict while creation validates managed fields for correctness (scope fields must match, system fields are ignored) for developer convenience.
 
 **Example:**
 
 ```typescript
 type User = {
   id: string;
+  organizationId: string; // scope field
   name: string;
   email: string;
   _createdAt?: Date;
   _updatedAt?: Date;
 };
 
-// With timestamps enabled:
+// With scope { organizationId: 'acme-123' } and timestamps enabled:
 // UpdateInput = { name: string; email: string }
-// CreateInput = { name: string; email: string; id?: string; _createdAt?: Date; _updatedAt?: Date }
+// CreateInput = { name: string; email: string; id?: string; organizationId?: string; _createdAt?: Date; _updatedAt?: Date }
 
 // ✅ Valid update - only user data
 await repo.update(id, { set: { name: 'John' } });
 
-// ❌ Compile error - can't update managed fields
+// ❌ Compile error - can't update managed fields (timestamps)
 await repo.update(id, { set: { _createdAt: new Date() } });
 
-// ✅ Valid create - managed fields optional but ignored if provided
+// ❌ Compile error - can't update managed fields (scope)
+await repo.update(id, { set: { organizationId: 'other-org' } });
+
+// ✅ Valid create - managed fields optional
 await repo.create({ name: 'John', email: 'john@example.com' });
+
+// ✅ Valid create - matching scope field ignored, others auto-generated
 await repo.create({
   id: 'will-be-ignored',
+  organizationId: 'acme-123', // matches repo scope - allowed but ignored
   name: 'John',
   email: 'john@example.com',
-  _createdAt: new Date(), // also ignored - repo generates its own
+  _createdAt: new Date(), // ignored - repo generates its own
+});
+
+// ❌ Runtime error - scope field doesn't match repository configuration
+await repo.create({
+  name: 'John',
+  email: 'john@example.com',
+  organizationId: 'other-org', // doesn't match scope 'acme-123' - operation fails
 });
 ```
 
@@ -318,7 +333,7 @@ Bulk version of `getById` that retrieves multiple entities by their IDs. Returns
 
 `create(entity: CreateInput): Promise<string>`
 
-Creates a new entity in the repository. Returns the generated ID for the created entity. The repository automatically generates a unique ID and all system-managed fields (timestamps, version). While `CreateInput` allows managed fields to be present in the input for convenience, they are stripped internally and the repository generates its own values. Scope fields are automatically applied during creation. Accepts scope properties if they match the repository's configured scope values. Fails for scope properties that don't match the repository's scope.
+Creates a new entity in the repository. Returns the generated ID for the created entity. The repository automatically generates a unique ID, applies configured scope values, and generates all system-managed fields (timestamps, version). While `CreateInput` allows managed fields to be present in the input for convenience, system fields are ignored and scope fields are validated - the operation fails if provided scope values don't match the repository's configured scope.
 
 ### createMany
 
@@ -330,7 +345,7 @@ Bulk version of `create` that creates multiple entities in a single operation. R
 
 `update(id: string, update: UpdateOperation<UpdateInput>, options?: { includeSoftDeleted?: boolean }): Promise<void>`
 
-Updates a single entity identified by its ID. The update operation supports both `set` (to update fields) and `unset` (to remove optional fields) operations, which can be used individually or combined. The repository automatically applies scope filtering and excludes soft-deleted entities by default to ensure only active entities within the current scope can be updated. Use the `includeSoftDeleted: true` option to allow updating soft-deleted entities. Note that scope properties and system-managed fields (timestamps, version, id) cannot be modified through updates - the `UpdateOperation<UpdateInput>` type excludes these fields, ensuring type safety at compile time. Implementations should also perform runtime checks to ensure that managed fields are not tampered with. Any configured timestamps (like `updatedAt`) or versioning increments are applied automatically. No error is thrown if the entity doesn't exist or doesn't match the scope.
+Updates a single entity identified by its ID. The update operation supports both `set` (to update fields) and `unset` (to remove optional fields) operations, which can be used individually or combined. The repository automatically applies scope filtering and excludes soft-deleted entities by default to ensure only active entities within the current scope can be updated. Use the `includeSoftDeleted: true` option to allow updating soft-deleted entities. Note that managed fields (scope properties, system fields like timestamps/version/id) cannot be modified through updates - the `UpdateOperation<UpdateInput>` type excludes these fields, ensuring type safety at compile time. Implementations should also perform runtime checks to ensure that managed fields are not tampered with. Any configured timestamps (like `updatedAt`) or versioning increments are applied automatically. No error is thrown if the entity doesn't exist or doesn't match the scope.
 
 ### updateMany
 
@@ -408,8 +423,10 @@ The `scope` parameter defines filtering criteria that are automatically applied 
 
 **Scope Property Handling by Operation:**
 
-- **Create/Upsert**: Scope properties can be included in entities and are validated to match the repository's configured scope values
-- **Updates**: Scope properties are explicitly excluded and cannot be modified
+Scope fields are treated as managed fields and are automatically controlled by the repository:
+
+- **Create/Upsert**: Scope properties can be included in entities for convenience but are validated - the operation fails if provided scope values don't match the repository's configured scope. The repository always applies its own configured scope values regardless of input.
+- **Updates**: Scope properties are excluded from `UpdateInput` type and cannot be modified (compile-time and runtime protection)
 - **Reads/Deletes**: Automatically filtered by scope values
 
 ```typescript
