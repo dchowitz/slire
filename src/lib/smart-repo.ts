@@ -13,10 +13,17 @@ const MONGODB_IN_OPERATOR_MAX_CLAUSES = 100;
 // projection type: { field1: true, field2: true }
 export type Projection<T> = Partial<Record<keyof T, true>>;
 
+// utility type to expand complex types for better IDE tooltips
+type Prettify<T> = {
+  [K in keyof T]: T[K];
+} & {};
+
 // mapped type for projected result
-type Projected<T, P extends Projection<T> | undefined> = P extends Projection<T>
-  ? { [K in keyof P]: K extends keyof T ? T[K] : never }
-  : T;
+type Projected<T, P extends Projection<T> | undefined> = Prettify<
+  P extends Projection<T>
+    ? { [K in keyof P]: K extends keyof T ? T[K] : never }
+    : T
+>;
 
 // timestamp configuration type
 type TimestampConfig<T> = {
@@ -82,28 +89,31 @@ const DEFAULT_UPDATED_AT_KEY = '_updatedAt';
 const DEFAULT_DELETED_AT_KEY = '_deletedAt';
 
 // MongoDB repository type with additional MongoDB-specific helpers and transaction methods
+// Prettified to show expanded type in IDE tooltips instead of complex intersection
 type MongoRepo<
   T extends { id: string },
   Config extends RepositoryConfig<T> = {},
   Managed extends ManagedFields<T, Config> = ManagedFields<T, Config>,
   InputEntity extends Record<string, unknown> = Omit<T, Managed> &
     Partial<Pick<T, Managed>>
-> = SmartRepo<T, Config, Managed, InputEntity> & {
-  collection: Collection<any>;
-  applyConstraints: (
-    input: any,
-    options?: { includeSoftDeleted?: boolean }
-  ) => any;
-  buildUpdateOperation: (update: UpdateOperation<any>) => any;
-  withSession(
-    session: ClientSession
-  ): MongoRepo<T, Config, Managed, InputEntity>;
-  runTransaction<R>(
-    operation: (
-      txRepo: SmartRepo<T, Config, Managed, InputEntity>
-    ) => Promise<R>
-  ): Promise<R>;
-};
+> = Prettify<
+  SmartRepo<T, Config, Managed, InputEntity> & {
+    collection: Collection<any>;
+    applyConstraints: (
+      input: any,
+      options?: { includeSoftDeleted?: boolean }
+    ) => any;
+    buildUpdateOperation: (update: UpdateOperation<any>) => any;
+    withSession(
+      session: ClientSession
+    ): MongoRepo<T, Config, Managed, InputEntity>;
+    runTransaction<R>(
+      operation: (
+        txRepo: SmartRepo<T, Config, Managed, InputEntity>
+      ) => Promise<R>
+    ): Promise<R>;
+  }
+>;
 
 // database-agnostic interface (limited to simple CRUD operations)
 export type SmartRepo<
@@ -124,26 +134,26 @@ export type SmartRepo<
     projection: P
   ): Promise<[Projected<T, P>[], string[]]>;
 
-  create(entity: InputEntity): Promise<string>;
-  createMany(entities: InputEntity[]): Promise<string[]>;
+  create(entity: Prettify<InputEntity>): Promise<string>;
+  createMany(entities: Prettify<InputEntity>[]): Promise<string[]>;
 
   update(
     id: string,
-    update: UpdateOperation<InputEntity>,
+    update: UpdateOperation<Prettify<InputEntity>>,
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
   updateMany(
     ids: string[],
-    update: UpdateOperation<InputEntity>,
+    update: UpdateOperation<Prettify<InputEntity>>,
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
 
   upsert(
-    entity: InputEntity,
+    entity: Prettify<InputEntity>,
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
   upsertMany(
-    entities: InputEntity[],
+    entities: Prettify<InputEntity>[],
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
 
@@ -186,6 +196,27 @@ export function combineSpecs<T>(
 
 /**
  * Creates a MongoDB repository with type-safe CRUD operations.
+ *
+ * @template T The entity type (must have id: string)
+ * @template Config Repository configuration options (inferred from options parameter)
+ *
+ * Advanced generics (Managed, InputEntity) are computed automatically - you typically don't need to specify them.
+ *
+ * @example
+ * ```typescript
+ * type User = { id: string; name: string; email: string };
+ * const repo = createSmartMongoRepo<User>({ collection, mongoClient });
+ * // Config, Managed, and InputEntity are inferred automatically
+ *
+ * // With configuration:
+ * const repoWithConfig = createSmartMongoRepo<User>({
+ *   collection,
+ *   mongoClient,
+ *   options: { softDelete: true, traceTimestamps: true }
+ * });
+ * // InputEntity becomes: { name: string; email: string; id?: string }
+ * ```
+ *
  */
 export function createSmartMongoRepo<
   T extends { id: string },
