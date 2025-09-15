@@ -56,53 +56,32 @@ type VersionKey<
   Config extends true | NumberKeys<T> | undefined
 > = Config extends NumberKeys<T> ? Config : never;
 
+// Simplified but still precise approach: Extract system fields that exist in T
+type SystemFieldsInT<T> = Extract<
+  | typeof SOFT_DELETE_KEY
+  | typeof DEFAULT_VERSION_KEY
+  | typeof DEFAULT_CREATED_AT_KEY
+  | typeof DEFAULT_UPDATED_AT_KEY
+  | typeof DEFAULT_DELETED_AT_KEY,
+  keyof T
+>;
+
+// utility type for input entities - makes system fields optional if they exist in T
+type InputEntity<T extends { id?: string }> = Omit<
+  T,
+  SystemFieldsInT<T> | 'id'
+> &
+  Partial<Pick<T, SystemFieldsInT<T>>> & { id?: string };
+
 const SOFT_DELETE_KEY = '_deleted';
 const DEFAULT_VERSION_KEY = '_version';
 const DEFAULT_CREATED_AT_KEY = '_createdAt';
 const DEFAULT_UPDATED_AT_KEY = '_updatedAt';
 const DEFAULT_DELETED_AT_KEY = '_deletedAt';
 
-/**
- * Reserved fields that cannot be used in entity models.
- *
- * If you get cryptic TypeScript errors related to MongoDB operations (insertOne, findOne, etc.),
- * it's likely because your entity type contains one of these reserved fields:
- *
- * - `_id`: MongoDB's internal document ID (use `id` instead)
- * - `_deleted`: Soft delete marker (managed automatically when softDelete is enabled)
- * - `_createdAt`: Default created timestamp (managed automatically when timestamps are enabled)
- * - `_updatedAt`: Default updated timestamp (managed automatically when timestamps are enabled)
- * - `_deletedAt`: Default deleted timestamp (managed automatically when timestamps are enabled)
- * - `_version`: Default version counter (managed automatically when versioning is enabled)
- *
- * @example
- * ```typescript
- * // ❌ BAD - will cause TypeScript errors
- * type BadUser = {
- *   id: string;
- *   name: string;
- *   _updatedAt: Date; // Reserved field!
- * };
- *
- * // ✅ GOOD - use custom field names instead
- * type GoodUser = {
- *   id: string;
- *   name: string;
- *   lastModified: Date; // Custom field name
- * };
- * ```
- */
-type ReservedFields =
-  | '_id' // MongoDB's internal document ID
-  | typeof SOFT_DELETE_KEY
-  | typeof DEFAULT_CREATED_AT_KEY
-  | typeof DEFAULT_UPDATED_AT_KEY
-  | typeof DEFAULT_DELETED_AT_KEY
-  | typeof DEFAULT_VERSION_KEY;
-
 // MongoDB repository type with additional MongoDB-specific helpers and transaction methods
 type MongoRepo<
-  T extends { id: string } & { [K in ReservedFields]?: never },
+  T extends { id: string },
   Scope extends Partial<T>,
   Entity extends Record<string, unknown>
 > = SmartRepo<T, Scope, Entity> & {
@@ -120,7 +99,7 @@ type MongoRepo<
 
 // database-agnostic interface (limited to simple CRUD operations)
 export type SmartRepo<
-  T extends { id: string } & { [K in ReservedFields]?: never },
+  T extends { id: string },
   Scope extends Partial<T> = {},
   Entity extends Record<string, unknown> = Omit<T, 'id'>
 > = {
@@ -135,8 +114,8 @@ export type SmartRepo<
     projection: P
   ): Promise<[Projected<T, P>[], string[]]>;
 
-  create(entity: T): Promise<string>;
-  createMany(entities: T[]): Promise<string[]>;
+  create(entity: InputEntity<T>): Promise<string>;
+  createMany(entities: InputEntity<T>[]): Promise<string[]>;
 
   update(
     id: string,
@@ -149,9 +128,12 @@ export type SmartRepo<
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
 
-  upsert(entity: T, options?: { includeSoftDeleted?: boolean }): Promise<void>;
+  upsert(
+    entity: InputEntity<T>,
+    options?: { includeSoftDeleted?: boolean }
+  ): Promise<void>;
   upsertMany(
-    entities: T[],
+    entities: InputEntity<T>[],
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
 
@@ -231,7 +213,7 @@ export function combineSpecs<T>(
  * ```
  */
 export function createSmartMongoRepo<
-  T extends { id: string } & { [K in ReservedFields]?: never },
+  T extends { id: string },
   Scope extends Partial<T> = {},
   TsConfig extends TimestampConfig<T> | undefined = undefined,
   VersionConfig extends true | NumberKeys<T> | undefined = undefined,
@@ -517,15 +499,17 @@ export function createSmartMongoRepo<
 
   // helper to map entity to Mongo doc, omitting all undefined properties and system fields (system fields auto-managed)
   function toMongoDoc(
-    entity: T & { id?: string },
+    entity: InputEntity<T> & { id?: string },
     op: 'create' | 'update' | 'upsert' | 'delete' | 'unset'
   ): any {
-    const { id, _id, ...entityData } = entity;
-    validateScopeProperties(entityData, op);
+    const { id, ...entityData } = entity;
+    // Remove _id if it exists (it won't on InputEntity types, but might be present in some edge cases)
+    const { _id, ...cleanEntityData } = entityData as any;
+    validateScopeProperties(cleanEntityData, op);
 
     // Strip all system-managed fields to prevent external manipulation
     const strippedEntityData = Object.fromEntries(
-      Object.entries(entityData).filter(([key]) => !READONLY_KEYS.has(key))
+      Object.entries(cleanEntityData).filter(([key]) => !READONLY_KEYS.has(key))
     );
 
     const filtered = deepFilterUndefined(strippedEntityData);
@@ -615,12 +599,12 @@ export function createSmartMongoRepo<
       return [foundDocs, notFoundIds];
     },
 
-    create: async (entity: T): Promise<string> => {
+    create: async (entity: InputEntity<T>): Promise<string> => {
       const ids = await repo.createMany([entity]);
       return ids[0];
     },
 
-    createMany: async (entities: T[]): Promise<string[]> => {
+    createMany: async (entities: InputEntity<T>[]): Promise<string[]> => {
       if (entities.length < 1) {
         return [];
       }
@@ -679,14 +663,14 @@ export function createSmartMongoRepo<
     },
 
     upsert: async (
-      entity: T,
+      entity: InputEntity<T>,
       options?: { includeSoftDeleted?: boolean }
     ): Promise<void> => {
       await repo.upsertMany([entity], options);
     },
 
     upsertMany: async (
-      entities: T[],
+      entities: InputEntity<T>[],
       options?: { includeSoftDeleted?: boolean }
     ): Promise<void> => {
       if (entities.length < 1) {
