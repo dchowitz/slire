@@ -40,8 +40,6 @@ type UpdateOperation<T> =
   | { set?: never; unset: OptionalKeys<T>[] }
   | { set: Partial<T>; unset: OptionalKeys<T>[] };
 
-type ScopeKeys<T, Scope extends Partial<T>> = Extract<keyof Scope, keyof T>;
-
 export type RepositoryConfig<T> = {
   generateId?: () => string;
   softDelete?: boolean;
@@ -187,42 +185,7 @@ export function combineSpecs<T>(
 }
 
 /**
- * Creates a smart MongoDB repository with type-safe CRUD operations.
- *
- * **IMPORTANT**: If you get cryptic TypeScript errors mentioning MongoDB operations
- * like `insertOne` or `findOne`, check that your entity type `T` doesn't contain
- * reserved fields like `_id`, `_deleted`, `_createdAt`, `_updatedAt`, `_deletedAt`, or `_version`.
- *
- * @template T - The entity type. Must have an `id: string` field and cannot contain reserved fields.
- * @template Scope - Partial entity type used for scoping (e.g., { organizationId: string })
- * @template TsConfig - Timestamp configuration for custom timestamp field names
- * @template VersionConfig - Version configuration (true for default `_version` or custom field name)
- * @template Entity - Derived entity type excluding id, scope, timestamp, and version fields
- *
- * @example
- * ```typescript
- * // ✅ Valid entity type
- * type User = {
- *   id: string;
- *   name: string;
- *   email: string;
- *   lastSeen?: Date; // Custom timestamp field
- * };
- *
- * const userRepo = createSmartMongoRepo<User>({ collection, mongoClient: client });
- * ```
- *
- * @example
- * ```typescript
- * // ❌ Invalid - will cause TypeScript errors
- * type BadUser = {
- *   id: string;
- *   _updatedAt: Date; // Reserved field!
- * };
- *
- * // This will fail with cryptic MongoDB-related TypeScript errors:
- * const badRepo = createSmartMongoRepo<BadUser>(collection, client);
- * ```
+ * Creates a MongoDB repository with type-safe CRUD operations.
  */
 export function createSmartMongoRepo<
   T extends { id: string },
