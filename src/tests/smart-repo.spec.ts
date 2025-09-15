@@ -699,6 +699,112 @@ describe('createSmartMongoRepo', function () {
       expect(rawDoc?.metadata?.nested?.field1).toBe('updated-value1');
       expect(rawDoc?.metadata?.nested?.deep?.level3).toBe('updated');
     });
+
+    it('should update existing entity in scoped collection', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        scope: { organizationId: 'acme' },
+      });
+
+      const id = await repo.create(
+        createTestEntity({ organizationId: 'acme', name: 'Original Name' })
+      );
+
+      await repo.update(id, { set: { name: 'Updated Name' } });
+
+      const updated = await repo.getById(id, { name: true });
+
+      expect(updated).toEqual({ name: 'Updated Name' });
+    });
+
+    it('should reject update that attempts to change scope', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        scope: { organizationId: 'acme' },
+      });
+
+      const id = await repo.create(
+        createTestEntity({ organizationId: 'acme', name: 'Original Name' })
+      );
+
+      await expect(
+        repo.update(id, {
+          set: { organizationId: 'foo', name: 'Updated Name' },
+        })
+      ).rejects.toThrow('Cannot update readonly properties: organizationId');
+
+      expect(
+        await repo.getById(id, { organizationId: true, name: true })
+      ).toEqual({
+        organizationId: 'acme',
+        name: 'Original Name',
+      });
+    });
+
+    it('should reject update that attempts to set managed fields', async () => {
+      type EntityWithManagedFields = TestEntity & {
+        _v: number;
+        _createdAt: Date;
+      };
+      const repo = createSmartMongoRepo({
+        collection:
+          testCollection() as unknown as Collection<EntityWithManagedFields>,
+        mongoClient: mongo.client,
+        scope: { organizationId: 'acme' },
+        options: { version: '_v', timestampKeys: { createdAt: '_createdAt' } },
+      });
+
+      const id = await repo.create(
+        createTestEntity({ organizationId: 'acme', name: 'Original Name' })
+      );
+
+      await expect(
+        repo.update(id, {
+          set: { _v: 47, name: 'Updated Name' } as any,
+          unset: ['_createdAt'] as any,
+        })
+      ).rejects.toThrow('Cannot update readonly properties: _v');
+
+      expect(
+        await repo.getById(id, { organizationId: true, name: true })
+      ).toEqual({
+        organizationId: 'acme',
+        name: 'Original Name',
+      });
+    });
+
+    it('should reject update that attempts to unset managed fields', async () => {
+      type EntityWithManagedFields = TestEntity & {
+        _v: number;
+        _createdAt: Date;
+      };
+      const repo = createSmartMongoRepo({
+        collection: rawTestCollection() as Collection<EntityWithManagedFields>,
+        mongoClient: mongo.client,
+        scope: { organizationId: 'acme' },
+        options: { version: '_v', timestampKeys: { createdAt: '_createdAt' } },
+      });
+
+      const id = await repo.create(
+        createTestEntity({ organizationId: 'acme', name: 'Original Name' })
+      );
+
+      await expect(
+        repo.update(id, {
+          set: { name: 'Updated Name' },
+          unset: ['_createdAt'] as any,
+        })
+      ).rejects.toThrow('Cannot unset readonly properties: _createdAt');
+
+      expect(
+        await repo.getById(id, { organizationId: true, name: true })
+      ).toEqual({
+        organizationId: 'acme',
+        name: 'Original Name',
+      });
+    });
   });
 
   describe('updateMany', () => {
@@ -3186,10 +3292,9 @@ type TestEntity = {
   };
 };
 
-// Helper to create test entity - always includes id field for new API
 function createTestEntity(overrides: Partial<TestEntity> = {}): TestEntity {
   return {
-    id: uuidv4(), // Always include id - repo will handle it appropriately
+    id: uuidv4(),
     organizationId: 'org123',
     name: 'Test User',
     email: 'test@example.com',
@@ -3199,6 +3304,6 @@ function createTestEntity(overrides: Partial<TestEntity> = {}): TestEntity {
       tags: ['test', 'integration'],
       notes: 'Test entity for generic repo',
     },
-    ...overrides, // Allow overriding all fields including id
+    ...overrides,
   };
 }

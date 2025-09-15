@@ -32,16 +32,16 @@ function test<
 const { foo, set } = test({} as Collection<Entity>, {
   softDelete: true,
   timestampKeys: { updatedAt: 'updatedAt' },
-  version: true,
+  version: '_v',
 });
 
-foo('_version');
+foo('_v');
 
 set({
   // id: 'foo',
   name: 'bar',
   age: 22,
   active: true,
-  _v: 3,
-  // _version: 3,
+  // _v: 3,
+  _version: 3,
 });
