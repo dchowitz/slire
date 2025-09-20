@@ -3192,6 +3192,33 @@ describe('createSmartMongoRepo', function () {
         });
       }).not.toThrow();
     });
+
+    it('should throw when scope contains readonly fields', () => {
+      type EntityWithReadonlyFields = TestEntity & {
+        created: Date;
+        _v: number;
+      };
+      expect(() =>
+        createSmartMongoRepo({
+          collection:
+            testCollection() as unknown as Collection<EntityWithReadonlyFields>,
+          mongoClient: mongo.client,
+          options: {
+            softDelete: true,
+            timestampKeys: { createdAt: 'created' },
+            version: '_v',
+          },
+          scope: {
+            _v: 1,
+            _deleted: true,
+            created: new Date(),
+            _updatedAt: new Date(),
+          },
+        })
+      ).toThrow(
+        'Readonly fields found in scope: _v, _deleted, created, _updatedAt'
+      );
+    });
   });
 });
 

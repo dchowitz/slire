@@ -322,6 +322,16 @@ export function createSmartMongoRepo<
     );
   }
 
+  // validate scope is not using any of the read-only fields (makes no sense)
+  const readOnlyFieldsInScope = Object.keys(scope).filter((f) =>
+    READONLY_KEYS.has(f)
+  );
+  if (readOnlyFieldsInScope.length > 0) {
+    throw new Error(
+      `Readonly fields found in scope: ${readOnlyFieldsInScope.join(', ')}`
+    );
+  }
+
   if (!timestampKeys?.createdAt) {
     HIDDEN_META_KEYS.add(CREATED_KEY);
   }
@@ -332,7 +342,7 @@ export function createSmartMongoRepo<
     HIDDEN_META_KEYS.add(DELETED_KEY);
   }
 
-  // add version field to hidden meta keys if using internal field
+  // add version field to hidden meta-keys if using internal field
   if (versionConfig === true) {
     HIDDEN_META_KEYS.add(VERSION_KEY);
   }
