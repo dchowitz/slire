@@ -2591,25 +2591,19 @@ describe('createSmartMongoRepo', function () {
         options: { version: true },
       });
 
-      // create multiple entities
-      const entities = [
+      const ids = await repo.createMany([
         createTestEntity({ name: 'Bulk 1' }),
         createTestEntity({ name: 'Bulk 2' }),
         createTestEntity({ name: 'Bulk 3' }),
-      ];
+      ]);
 
-      const ids = await repo.createMany(entities);
-
-      // all should have version 1
       for (const id of ids) {
         const raw = await rawTestCollection().findOne({ _id: id });
         expect(raw).toHaveProperty('_version', 1);
       }
 
-      // bulk update
       await repo.updateMany(ids, { set: { name: 'Updated Bulk' } });
 
-      // all should have version 2
       for (const id of ids) {
         const raw = await rawTestCollection().findOne({ _id: id });
         expect(raw).toHaveProperty('_version', 2);
@@ -2822,14 +2816,11 @@ describe('createSmartMongoRepo', function () {
         await session.withTransaction(async () => {
           const txRepo = repo.withSession(session);
 
-          // create multiple entities in the transaction
-          const entities = [
+          const createdIds = await txRepo.createMany([
             createTestEntity({ name: 'TX Entity 1' }),
             createTestEntity({ name: 'TX Entity 2' }),
             createTestEntity({ name: 'TX Entity 3' }),
-          ];
-
-          const createdIds = await txRepo.createMany(entities);
+          ]);
 
           // update one of them
           await txRepo.update(createdIds[0], { set: { age: 99 } });
@@ -2860,14 +2851,11 @@ describe('createSmartMongoRepo', function () {
       });
 
       const result = await repo.runTransaction(async (txRepo) => {
-        // create some test data
-        const entities = [
+        const createdIds = await txRepo.createMany([
           createTestEntity({ name: 'Run TX 1', age: 25 }),
           createTestEntity({ name: 'Run TX 2', age: 30 }),
           createTestEntity({ name: 'Run TX 3', age: 35 }),
-        ];
-
-        const createdIds = await txRepo.createMany(entities);
+        ]);
 
         // update all ages
         await txRepo.updateMany(createdIds, { set: { age: 40 } });
@@ -2905,12 +2893,10 @@ describe('createSmartMongoRepo', function () {
           await session.withTransaction(async () => {
             const txRepo = repo.withSession(session);
 
-            // create new entities
-            const newEntities = [
+            await txRepo.createMany([
               createTestEntity({ name: 'Should Not Persist 1' }),
               createTestEntity({ name: 'Should Not Persist 2' }),
-            ];
-            await txRepo.createMany(newEntities);
+            ]);
 
             // update initial entity
             await txRepo.update(initialId, {
@@ -2944,21 +2930,17 @@ describe('createSmartMongoRepo', function () {
         mongoClient: mongo.client,
       });
 
-      // create some initial data
-      const initialEntities = [
+      const initialIds = await repo.createMany([
         createTestEntity({ name: 'Existing 1', age: 20 }),
         createTestEntity({ name: 'Existing 2', age: 25 }),
-      ];
-      const initialIds = await repo.createMany(initialEntities);
+      ]);
 
       try {
         await repo.runTransaction(async (txRepo) => {
-          // create new entities
-          const newEntities = [
+          await txRepo.createMany([
             createTestEntity({ name: 'Rollback Test 1' }),
             createTestEntity({ name: 'Rollback Test 2' }),
-          ];
-          await txRepo.createMany(newEntities);
+          ]);
 
           // update existing entities
           await txRepo.updateMany(initialIds, { set: { age: 99 } });
@@ -3079,7 +3061,6 @@ describe('createSmartMongoRepo', function () {
         mongoClient: mongo.client,
       });
 
-      // create some initial data
       const initialEntity = createTestEntity({
         name: 'Initial TX Entity',
         age: 30,
