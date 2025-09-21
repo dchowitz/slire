@@ -2108,6 +2108,43 @@ describe('createSmartMongoRepo', function () {
       const count = await scopedRepo.count({});
       expect(count).toBe(2);
     });
+
+    it('treats empty scope as no scope', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+
+      const emptyScopedRepo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        scope: {},
+      });
+
+      const [id1, id2] = await repo.createMany([
+        createTestEntity({ name: 'U1', tenantId: 'acme', age: 30 }),
+        createTestEntity({ name: 'U2', tenantId: 'not-acme', age: 31 }),
+        createTestEntity({ name: 'U3', tenantId: 'acme', age: 32 }),
+      ]);
+
+      // empty scope should not filter results
+      const allFromEmptyScope = await emptyScopedRepo.find({});
+      expect(allFromEmptyScope.map((u) => u.name).sort()).toEqual([
+        'U1',
+        'U2',
+        'U3',
+      ]);
+      expect(await emptyScopedRepo.count({})).toBe(3);
+
+      // access by id should work for any entity
+      expect(await emptyScopedRepo.getById(id2)).not.toBeNull();
+
+      // updates should not have readonly restrictions (since there is no scope)
+      await emptyScopedRepo.update(id1, { set: { tenantId: 'changed' } });
+      expect(await emptyScopedRepo.getById(id1, { tenantId: true })).toEqual({
+        tenantId: 'changed',
+      });
+    });
   });
 
   describe('soft delete', () => {
