@@ -2064,6 +2064,50 @@ describe('createSmartMongoRepo', function () {
         expect(user).not.toHaveProperty('email');
       });
     });
+
+    it('supports multi-property scope', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+
+      const scopedRepo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        scope: { tenantId: 'acme', age: 30 },
+      });
+
+      const [, id2, id3] = await repo.createMany([
+        // in scope
+        createTestEntity({ name: 'Match 1', tenantId: 'acme', age: 30 }),
+        // out of scope: wrong age
+        createTestEntity({ name: 'Wrong age', tenantId: 'acme', age: 31 }),
+        // out of scope: wrong tenant
+        createTestEntity({
+          name: 'Wrong tenant',
+          tenantId: 'not-acme',
+          age: 30,
+        }),
+        // in scope
+        createTestEntity({ name: 'Match 2', tenantId: 'acme', age: 30 }),
+      ]);
+
+      // entities not matching full scope should not be accessible
+      expect(await scopedRepo.getById(id2)).toBeNull();
+      expect(await scopedRepo.getById(id3)).toBeNull();
+
+      // only entities matching all scope properties are visible
+      const results = await scopedRepo.find({});
+      expect(results).toHaveLength(2);
+      results.forEach((user) => {
+        expect(user.tenantId).toBe('acme');
+        expect(user.isActive).toBe(true);
+        expect(user.age).toBe(30);
+      });
+
+      const count = await scopedRepo.count({});
+      expect(count).toBe(2);
+    });
   });
 
   describe('soft delete', () => {
