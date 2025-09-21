@@ -467,6 +467,11 @@ The `options` parameter configures consistency features and repository behavior:
 
 **`generateId?: () => string`** - Custom ID generation function. By default, the repository uses UUID v4 for generating entity IDs. Provide a custom function to use different ID formats (e.g., sequential numbers, custom prefixes, or other UUID versions). This function is called automatically during `create` and `createMany` operations.
 
+**`identity?: 'synced' | 'detached'`** - Controls whether the public `id` is tied to the datastore's internal key. Defaults to `'synced'`.
+
+- **synced (default)**: The datastore key and `id` are the same. In MongoDB, `_id === id`; in Firestore, the document id equals `id`. `id` is read-only on updates.
+- **detached**: The datastore uses its own internal key while `id` is a business key stored as a normal field. All CRUD operations address entities by `id`; the internal key is never exposed. In MongoDB, ensure a unique index on `id`. `id` is still read-only on updates. Create operations continue to generate `id` (client-supplied ids are not accepted).
+
 **`softDelete?: boolean`** - Enables soft delete functionality. When `true`, delete operations mark entities with a `_deleted` flag instead of physically removing them from the database. Soft-deleted entities are automatically excluded from all read operations (`find`, `getById`, `count`). Defaults to `false` (hard delete).
 
 **`traceTimestamps?: true | 'mongo' | (() => Date)`** - Configures automatic timestamping behavior. When `true`, uses JavaScript `Date.now()` for timestamps. When `'mongo'`, uses MongoDB server timestamps. When a function is provided, that function is called to generate timestamps (this can come in handy for integration tests). The timestamps are applied as follows: `createdAt` is set during `create`, `createMany` operations and when `upsert`/`upsertMany` creates new entities; `updatedAt` is set on all write operations (`create`, `createMany`, `update`, `updateMany`, `upsert`, `upsertMany`, `delete`, `deleteMany`); `deletedAt` is set during soft delete operations when `softDelete` is enabled.
