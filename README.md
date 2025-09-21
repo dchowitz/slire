@@ -9,7 +9,6 @@
   - [getById](#getbyid) - [getByIds](#getbyids)
   - [create](#create) - [createMany](#createmany)
   - [update](#update) - [updateMany](#updatemany)
-  - [upsert](#upsert) - [upsertMany](#upsertmany)
   - [delete](#delete) - [deleteMany](#deletemany)
   - [find](#find) - [findBySpec](#findbyspec)
   - [count](#count) - [countBySpec](#countbyspec)
@@ -20,6 +19,7 @@
   - [collection](#collection)
   - [applyConstraints](#applyconstraints)
   - [buildUpdateOperation](#buildupdateoperation)
+  - [When you need upsert](#when-you-need-upsert)
 - [Recommended Usage Patterns](#recommended-usage-patterns)
   - [Repository Factories](#repository-factories)
   - [Export Repository Types](#export-repository-types)
@@ -359,19 +359,9 @@ Bulk version of `update` that applies the same update operation to multiple enti
 
 For large inputs, the operation may run in chunks to respect MongoDB limits and is not atomic across chunks. If you need all-or-nothing behavior across many IDs, wrap the call in a transaction using `runTransaction`.
 
-### upsert
-
-`upsert(entity: CreateInput, options?: { includeSoftDeleted?: boolean }): Promise<void>`
-
-Inserts a new entity if it doesn't exist, or updates an existing entity if it does exist, based on the provided ID. Unlike `create`, the entity must include an `id` field. The repository applies scope filtering and excludes soft-deleted entities by default during both the existence check and the actual operation. Use the `includeSoftDeleted: true` option to target soft-deleted entities for updates. Like `create`, scope properties can be included in the entity and will be validated to ensure they match the repository's configured scope values. For inserts, automatic timestamps (like `createdAt`) and initial versioning are applied. For updates, only update-related timestamps (like `updatedAt`) and version increments are applied. If an entity exists but is out of scope (or is soft-deleted without the option), it will be treated as non-existent and a new entity will be attempted to be created, which may fail due to unique constraints. Note that when the repository is configured with a custom ID generator, the user is responsible for providing correct IDs that conform to the generator's format.
-
-### upsertMany
-
-`upsertMany(entities: CreateInput[], options?: { includeSoftDeleted?: boolean }): Promise<void>`
-
-Bulk version of `upsert` that performs insert-or-update operations on multiple entities in a single call. Each entity is processed independently with the same logic and options support as the single `upsert` function, including the same soft-delete filtering behavior, `includeSoftDeleted` option, and scope property validation. This provides better performance than multiple individual upsert calls while maintaining the same consistency guarantees and scope filtering behavior.
-
 This method is not all-or-nothing. Some entities may be inserted, some updated, and others may fail due to unique constraints or scope rules. For atomicity across entities, wrap the call in a transaction using `runTransaction`.
+
+Note that `upsert` and `upsertMany` are intentionally not provided to keep the API simple.
 
 ### delete
 
@@ -526,9 +516,52 @@ Helper method that applies the repository's scope filtering to a given filter ob
 
 Helper method that transforms a repository update operation into a MongoDB-compliant update document with all configured consistency features applied. Takes an `UpdateOperation<UpdateInput>` with `set` and/or `unset` fields and automatically adds timestamps (like `updatedAt`), version increments, and any other configured repository features. Modification of system-managed fields is both prevented at compile time (type-level) and at runtime. This ensures that direct collection operations maintain the same consistency behavior as the repository's built-in update methods. Essential when performing direct `updateOne`, `updateMany`, or `bulkWrite` operations on the collection.
 
+### When you need upsert
+
+SmartRepo does not include upsert operations to keep the core API simple and semantics clear. When you need upsert operations, use the MongoDB collection directly with these patterns while reusing repository helpers for consistency:
+
+- merge-style upsert (preserve unspecified fields):
+
+```ts
+await repo.collection.updateOne(
+  repo.applyConstraints({ _id: id }),
+  repo.buildUpdateOperation({ set: partialEntity }),
+  { upsert: true }
+);
+```
+
+- replace-like upsert (clear unspecified fields):
+
+```ts
+const current = await repo.collection.findOne(repo.applyConstraints({ _id: id }));
+
+// build target input from your payload stripped off of managed fields
+const target = /* stripManaged(input) -> any */;
+
+// compute all keys that exist in `current` but not in `target`.
+// important: include nested keys using MongoDB dot-notation (e.g., { a: { b: 1 } } -> ['a.b']).
+// exclude datastore keys like '_id'.
+// implement a deep diff to collect these paths.
+const unsetKeys = /* computeUnsetKeys(current, target) -> string[] */;
+
+// reuse repository logic for timestamps/versioning and validation
+const update = repo.buildUpdateOperation({ set: target, unset: unsetKeys as any });
+await repo.collection.updateOne(
+  repo.applyConstraints({ _id: id }), // or simply `{ id }` for detached identity mode
+  update,
+  { upsert: true }
+);
+```
+
+You can still leverage `repo.applyConstraints` for scope/soft-delete filtering and `repo.buildUpdateOperation` for timestamp/version logic in merge-style scenarios. For replace-like behavior with server timestamps, prefer `updateOne` with update modifiers provided by `buildUpdateOperation` (as shown) rather than `replaceOne` as it doesn't support server timestamps.
+
+Note: The replace-like pattern performs a pre-read to compute unset keys. To avoid race conditions and achieve all-or-nothing behavior, wrap this sequence in a transaction using `runTransaction`.
+
 ## Recommended Usage Patterns
 
 Follow the recommendations in this section to maintain consistency and keep the code organized. Most of them apply to the current MongoDB implementation.
+
+!!TODO - link to article (part 2 of this doc) for more detailed architectural guidance
 
 ### Repository Factories
 

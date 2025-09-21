@@ -166,15 +166,6 @@ export type SmartRepo<
     options?: { includeSoftDeleted?: boolean }
   ): Promise<void>;
 
-  upsert(
-    entity: Prettify<CreateInput>,
-    options?: { includeSoftDeleted?: boolean }
-  ): Promise<void>;
-  upsertMany(
-    entities: Prettify<CreateInput>[],
-    options?: { includeSoftDeleted?: boolean }
-  ): Promise<void>;
-
   delete(id: string): Promise<void>;
   deleteMany(ids: string[]): Promise<void>;
 
@@ -388,7 +379,7 @@ export function createSmartMongoRepo<
   }
 
   // helper to centralize timestamp handling
-  type WriteOp = 'create' | 'update' | 'delete' | 'upsert';
+  type WriteOp = 'create' | 'update' | 'delete';
   function applyTimestamps(op: WriteOp, mongoUpdate: any): any {
     const useMongoTimestamps = effectiveTraceTimestamps === 'server';
     const now =
@@ -418,11 +409,6 @@ export function createSmartMongoRepo<
           : {};
         break;
       case 'update':
-        parts.$set = now ? { [UPDATED_KEY]: now } : {};
-        parts.$currentDate = useMongoTimestamps ? { [UPDATED_KEY]: true } : {};
-        break;
-      case 'upsert':
-        parts.$setOnInsert = { [CREATED_KEY]: now ?? new Date() }; // always use app time here as we cannot distinguish between insert and update in $currentDate
         parts.$set = now ? { [UPDATED_KEY]: now } : {};
         parts.$currentDate = useMongoTimestamps ? { [UPDATED_KEY]: true } : {};
         break;
@@ -467,14 +453,6 @@ export function createSmartMongoRepo<
           },
         };
       case 'update':
-      case 'upsert':
-        return {
-          ...mongoUpdate,
-          $inc: {
-            ...(mongoUpdate.$inc ?? {}),
-            [VERSION_KEY]: 1,
-          },
-        };
       case 'delete':
         return {
           ...mongoUpdate,
@@ -572,7 +550,7 @@ export function createSmartMongoRepo<
   }
 
   // helper to map entity to Mongo doc, omitting all undefined properties and system fields (system fields auto-managed)
-  function toMongoDoc(entity: CreateInput, op: 'create' | 'upsert'): any {
+  function toMongoDoc(entity: CreateInput, op: 'create'): any {
     const { id, ...entityData } = entity;
     // Remove _id if it exists (shouldn't but might be present in some edge cases)
     const { _id, ...cleanEntityData } = entityData as any;
@@ -588,13 +566,12 @@ export function createSmartMongoRepo<
     // identity handling
     if (isDetachedIdentity) {
       // business id and internal id are different
-      const businessId =
-        op === 'create' ? generateIdFn() : id ?? generateIdFn();
+      const businessId = generateIdFn();
       const internalId = generateIdFn();
       return { ...filtered, ...scope, id: businessId, _id: internalId };
     } else {
       // synced: use single id for both
-      const syncId = op === 'create' ? generateIdFn() : id ?? generateIdFn();
+      const syncId = generateIdFn();
       return { ...filtered, ...scope, _id: syncId };
     }
   }
@@ -777,53 +754,6 @@ export function createSmartMongoRepo<
           updateOperation,
           withSessionOptions()
         );
-      }
-    },
-
-    upsert: async (
-      entity: CreateInput,
-      options?: { includeSoftDeleted?: boolean }
-    ): Promise<void> => {
-      await repo.upsertMany([entity], options);
-    },
-
-    upsertMany: async (
-      entities: CreateInput[],
-      options?: { includeSoftDeleted?: boolean }
-    ): Promise<void> => {
-      if (entities.length < 1) {
-        return;
-      }
-
-      // use chunking for large batches to avoid MongoDB limitations
-      const chunks = chunk(entities, MONGODB_MAX_MODIFICATIONS_PER_TRANSACTION);
-
-      for (const entityChunk of chunks) {
-        const ops = entityChunk.map((entity) => {
-          const doc = toMongoDoc(entity, 'upsert');
-          if (isDetachedIdentity) {
-            const { _id: internalId, ...docWithoutInternal } = doc as any;
-            const filter = applyConstraints(idFilter((doc as any).id), options);
-            const update = applyVersion(
-              'upsert',
-              applyTimestamps('upsert', {
-                $set: docWithoutInternal,
-                $setOnInsert: { _id: internalId },
-              })
-            );
-            return { updateOne: { filter, update, upsert: true } } as any;
-          } else {
-            const filter = applyConstraints({ _id: (doc as any)._id }, options);
-            const update = applyVersion(
-              'upsert',
-              applyTimestamps('upsert', {
-                $set: doc as any,
-              })
-            );
-            return { updateOne: { filter, update, upsert: true } } as any;
-          }
-        });
-        await collection.bulkWrite(ops, withSessionOptions());
       }
     },
 
