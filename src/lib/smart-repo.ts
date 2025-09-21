@@ -720,18 +720,14 @@ export function createSmartMongoRepo<
             unknown
           >;
 
-          // split current batch into inserted/failed based on upserted indices
+          // split current batch into inserted/failed
+          const failedInCurrent: string[] = [];
           for (let i = 0; i < batch.length; i++) {
             const id = preparedPublicIds[offset + i];
             if (Object.prototype.hasOwnProperty.call(upserted, String(i))) {
               insertedSoFar.push(id);
-            }
-          }
-
-          const failedInCurrent: string[] = [];
-          for (let i = 0; i < batch.length; i++) {
-            if (!Object.prototype.hasOwnProperty.call(upserted, String(i))) {
-              failedInCurrent.push(preparedPublicIds[offset + i]);
+            } else {
+              failedInCurrent.push(id);
             }
           }
 
