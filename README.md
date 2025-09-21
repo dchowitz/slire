@@ -470,7 +470,7 @@ The `options` parameter configures consistency features and repository behavior:
 **`identity?: 'synced' | 'detached'`** - Controls whether the public `id` is tied to the datastore's internal key. Defaults to `'synced'`.
 
 - **synced (default)**: The datastore key and `id` are the same. In MongoDB, `_id === id`; in Firestore, the document id equals `id`. `id` is read-only on updates.
-- **detached**: The datastore uses its own internal key while `id` is a business key stored as a normal field. All CRUD operations address entities by `id`; the internal key is never exposed. In MongoDB, ensure a unique index on `id`. `id` is still read-only on updates. Create operations continue to generate `id` (client-supplied ids are not accepted).
+- **detached**: The datastore uses its own internal key while `id` is a business key stored as a normal field. All CRUD operations address entities by `id`; the internal key is never exposed. **Ensure a unique index on `id`.** `id` is still read-only on updates. Create operations continue to generate `id` (client-supplied ids are not accepted).
 
 **`softDelete?: boolean`** - Enables soft delete functionality. When `true`, delete operations mark entities with a `_deleted` flag instead of physically removing them from the database. Soft-deleted entities are automatically excluded from all read operations (`find`, `getById`, `count`). Defaults to `false` (hard delete).
 

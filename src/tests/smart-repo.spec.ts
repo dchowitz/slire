@@ -6,6 +6,7 @@ import {
   createSmartMongoRepo,
   SmartRepo,
   Specification,
+  CreateManyPartialFailure,
 } from '../lib/smart-repo';
 import { mongo, setupMongo, teardownMongo } from './mongo-fixture';
 
@@ -397,6 +398,74 @@ describe('createSmartMongoRepo', function () {
           email: `user${i}@example.com`,
           age: 20 + i,
         });
+      }
+    });
+
+    it('should throw CreateManyPartialFailure with inserted/failed ids on duplicate ids within a single batch', async () => {
+      // generate identical ids to force only the first upsert to insert, others match and do not upsert
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: { generateId: () => 'DUPLICATE-ID' },
+      });
+
+      const entities = [
+        createTestEntity({ name: 'A' }),
+        createTestEntity({ name: 'B' }),
+        createTestEntity({ name: 'C' }),
+      ];
+
+      try {
+        await repo.createMany(entities);
+        fail('should have thrown');
+      } catch (e: any) {
+        if (e instanceof CreateManyPartialFailure) {
+          expect(e.insertedIds).toHaveLength(1);
+          expect(e.failedIds).toHaveLength(2);
+          // DB should contain exactly the inserted documents
+          const count = await rawTestCollection().countDocuments({});
+          expect(count).toBe(1);
+          const aDoc = await rawTestCollection().findOne({ name: 'A' });
+          expect(aDoc).toBeTruthy();
+        } else {
+          throw e;
+        }
+      }
+    });
+
+    it('should report prior-batch inserts and mark subsequent ids as failed when a later batch fails', async () => {
+      // create 1005 entities to span two batches (1000 + 5)
+      // generate unique ids for the first 1000, then duplicate the same id for the last 5
+      let counter = 0;
+      const generateId = () => {
+        counter += 1;
+        return counter <= 1000 ? `ID-${counter}` : 'DUP-LAST-BATCH';
+      };
+
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: { generateId },
+      });
+
+      const entities = range(0, 1005).map((i) =>
+        createTestEntity({ name: `U${i}`, email: `u${i}@e.com` })
+      );
+
+      try {
+        await repo.createMany(entities);
+        fail('should have thrown');
+      } catch (e: any) {
+        if (e instanceof CreateManyPartialFailure) {
+          // first 1000 + first of second batch were inserted
+          expect(e.insertedIds).toHaveLength(1001);
+          // remaining 4 in second batch failed
+          expect(e.failedIds).toHaveLength(4);
+          const count = await rawTestCollection().countDocuments({});
+          expect(count).toBe(1001);
+        } else {
+          throw e;
+        }
       }
     });
   });

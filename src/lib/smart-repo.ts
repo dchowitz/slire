@@ -199,6 +199,22 @@ export type Specification<T> = {
   describe: string;
 };
 
+// Thrown by createMany when some but not all documents were inserted.
+// Contains the list of successfully inserted public ids and the ones that failed.
+export class CreateManyPartialFailure extends Error {
+  insertedIds: string[];
+  failedIds: string[];
+  constructor(params: { insertedIds: string[]; failedIds: string[] }) {
+    const total = params.insertedIds.length + params.failedIds.length;
+    super(
+      `createMany partially inserted ${params.insertedIds.length}/${total} entities`
+    );
+    this.name = 'CreateManyPartialFailure';
+    this.insertedIds = params.insertedIds;
+    this.failedIds = params.failedIds;
+  }
+}
+
 export function combineSpecs<T>(
   ...specs: Specification<T>[]
 ): Specification<T> {
@@ -670,13 +686,25 @@ export function createSmartMongoRepo<
         return [];
       }
 
-      // use chunking for large batches to avoid MongoDB limitations
-      const chunks = chunk(entities, MONGODB_MAX_MODIFICATIONS_PER_TRANSACTION);
-      const allIds: string[] = [];
+      // prepare all docs upfront so we have stable ids for reporting
+      const preparedDocs = entities.map((e) => toMongoDoc(e, 'create'));
+      const preparedPublicIds = preparedDocs.map((doc) =>
+        getPublicIdFromDoc(doc as any)
+      );
 
-      for (const entityChunk of chunks) {
-        const prepared = entityChunk.map((e) => toMongoDoc(e, 'create'));
-        const ops = prepared.map((doc) => {
+      const insertedSoFar: string[] = [];
+
+      // process in batches to respect MongoDB limitations
+      for (
+        let offset = 0;
+        offset < preparedDocs.length;
+        offset += MONGODB_MAX_MODIFICATIONS_PER_TRANSACTION
+      ) {
+        const batch = preparedDocs.slice(
+          offset,
+          offset + MONGODB_MAX_MODIFICATIONS_PER_TRANSACTION
+        );
+        const ops = batch.map((doc) => {
           const filter = applyConstraints(filterForDoc(doc));
           const update: any = applyVersion(
             'create',
@@ -685,21 +713,45 @@ export function createSmartMongoRepo<
           return { updateOne: { filter, update, upsert: true } } as any;
         });
         const result = await collection.bulkWrite(ops, withSessionOptions());
-        if (isDetachedIdentity) {
-          // return only newly created business ids, mirroring synced behavior
-          for (const key in (result as any).upsertedIds) {
-            const idx = Number(key);
-            const doc = prepared[idx] as any;
-            allIds.push(doc.id as string);
+
+        if (result.upsertedCount !== ops.length) {
+          const upserted = ((result as any).upsertedIds || {}) as Record<
+            string,
+            unknown
+          >;
+
+          // split current batch into inserted/failed based on upserted indices
+          for (let i = 0; i < batch.length; i++) {
+            const id = preparedPublicIds[offset + i];
+            if (Object.prototype.hasOwnProperty.call(upserted, String(i))) {
+              insertedSoFar.push(id);
+            }
           }
-        } else {
-          for (let i = 0; i < result.upsertedCount; i++) {
-            allIds.push(result.upsertedIds[i]);
+
+          const failedInCurrent: string[] = [];
+          for (let i = 0; i < batch.length; i++) {
+            if (!Object.prototype.hasOwnProperty.call(upserted, String(i))) {
+              failedInCurrent.push(preparedPublicIds[offset + i]);
+            }
           }
+
+          // all subsequent batches are skipped
+          const skipped = preparedPublicIds.slice(offset + batch.length);
+
+          throw new CreateManyPartialFailure({
+            insertedIds: insertedSoFar,
+            failedIds: [...failedInCurrent, ...skipped],
+          });
         }
+
+        // record successful inserts for this batch
+        insertedSoFar.push(
+          ...preparedPublicIds.slice(offset, offset + batch.length)
+        );
       }
 
-      return allIds;
+      // success: return ids in input order
+      return preparedPublicIds;
     },
 
     update: async (
