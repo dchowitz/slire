@@ -890,18 +890,22 @@ describe('createSmartMongoRepo', function () {
         collection: testCollection(),
         mongoClient: mongo.client,
       });
-      const [createdId, ...ids] = await repo.createMany([
+      const createdIds = await repo.createMany([
         createTestEntity({ name: 'User 1' }),
         createTestEntity({ name: 'User 2' }),
         createTestEntity({ name: 'User 3' }),
       ]);
 
-      // this should not throw an error
-      await repo.updateMany(ids, { set: { isActive: false } });
+      // include a non-existent id; this should not throw
+      const nonExistentId = 'non-existent-id';
+      await repo.updateMany([...createdIds, nonExistentId], {
+        set: { isActive: false },
+      });
 
-      // verify the existing entity was updated
-      const updated = await repo.getById(createdId);
-      expect(updated?.isActive).toBe(false);
+      // verify all entities were updated
+      const [found] = await repo.getByIds(createdIds);
+      expect(found).toHaveLength(3);
+      expect(found.every((e) => e.isActive === false)).toBe(true);
     });
   });
 
