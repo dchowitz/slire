@@ -1152,7 +1152,7 @@ describe('createSmartMongoRepo', function () {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
-        options: { traceTimestamps: 'mongo' },
+        options: { traceTimestamps: 'server' },
       });
 
       const entity = createTestEntity({
@@ -2449,7 +2449,7 @@ describe('createSmartMongoRepo', function () {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
-        options: { softDelete: true, traceTimestamps: 'mongo' },
+        options: { softDelete: true, traceTimestamps: 'server' },
       });
 
       const id = await repo.create(createTestEntity({ name: 'TS-M' }));

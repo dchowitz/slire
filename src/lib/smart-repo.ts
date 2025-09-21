@@ -50,7 +50,7 @@ export type UpdateOperation<T> =
 export type RepositoryConfig<T> = {
   generateId?: () => string;
   softDelete?: boolean;
-  traceTimestamps?: true | 'mongo' | (() => Date); // TODO - rename 'mongo' -> 'server'
+  traceTimestamps?: true | 'server' | (() => Date);
   timestampKeys?: TimestampConfig<T>;
   version?: true | NumberKeys<T>;
   identity?: 'synced' | 'detached';
@@ -390,7 +390,7 @@ export function createSmartMongoRepo<
   // helper to centralize timestamp handling
   type WriteOp = 'create' | 'update' | 'delete' | 'upsert';
   function applyTimestamps(op: WriteOp, mongoUpdate: any): any {
-    const useMongoTimestamps = effectiveTraceTimestamps === 'mongo';
+    const useMongoTimestamps = effectiveTraceTimestamps === 'server';
     const now =
       effectiveTraceTimestamps === true
         ? new Date()
