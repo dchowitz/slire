@@ -268,6 +268,27 @@ export function createSmartMongoRepo<
   const identityMode = options?.identity ?? 'synced';
   const isDetachedIdentity = identityMode === 'detached';
 
+  // centralized id handling helpers
+  const DATASTORE_ID_KEY = isDetachedIdentity ? 'id' : '_id';
+  const idFilter = (id: string): any => ({ [DATASTORE_ID_KEY]: id } as any);
+  const idsFilter = (ids: string[]): any =>
+    ({ [DATASTORE_ID_KEY]: { $in: ids } } as any);
+  const getPublicIdFromDoc = (doc: any): string =>
+    isDetachedIdentity
+      ? ((doc as any).id as string)
+      : (doc._id as unknown as string);
+  const convertFilter = (filter: Partial<T>): any => {
+    if (isDetachedIdentity) {
+      return filter as any;
+    }
+    const { id, ...rest } = filter as any;
+    return id ? ({ _id: id, ...rest } as any) : rest;
+  };
+  const filterForDoc = (doc: any): any =>
+    isDetachedIdentity
+      ? idFilter((doc as any).id)
+      : ({ _id: (doc as any)._id } as any);
+
   // if timestampKeys are configured, enable tracing by default
   const effectiveTraceTimestamps =
     options?.traceTimestamps ?? (timestampKeys ? true : undefined);
@@ -610,7 +631,7 @@ export function createSmartMongoRepo<
         ? Object.fromEntries(Object.keys(projection).map((k) => [k, 1]))
         : undefined;
       const doc = await collection.findOne(
-        applyConstraints(isDetachedIdentity ? { id } : { _id: id }),
+        applyConstraints(idFilter(id)),
         withSessionOptions(
           mongoProjection ? { projection: mongoProjection } : undefined
         )
@@ -627,23 +648,13 @@ export function createSmartMongoRepo<
         : undefined;
       const docs = await collection
         .find(
-          applyConstraints(
-            isDetachedIdentity
-              ? ({ id: { $in: ids } } as any)
-              : ({ _id: { $in: ids } } as any)
-          ),
+          applyConstraints(idsFilter(ids)),
           withSessionOptions(
             mongoProjection ? { projection: mongoProjection } : undefined
           )
         )
         .toArray();
-      const foundIds = new Set(
-        docs.map((doc) =>
-          isDetachedIdentity
-            ? ((doc as any).id as string)
-            : (doc._id as unknown as string)
-        )
-      );
+      const foundIds = new Set(docs.map((doc) => getPublicIdFromDoc(doc)));
       const foundDocs = docs.map((doc) => fromMongoDoc(doc, projection));
       const notFoundIds = ids.filter((id) => !foundIds.has(id));
       return [foundDocs, notFoundIds];
@@ -666,11 +677,7 @@ export function createSmartMongoRepo<
       for (const entityChunk of chunks) {
         const prepared = entityChunk.map((e) => toMongoDoc(e, 'create'));
         const ops = prepared.map((doc) => {
-          const filter = applyConstraints(
-            isDetachedIdentity
-              ? ({ id: (doc as any).id } as any)
-              : ({ _id: doc._id } as any)
-          );
+          const filter = applyConstraints(filterForDoc(doc));
           const update: any = applyVersion(
             'create',
             applyTimestamps('create', { $setOnInsert: doc })
@@ -718,12 +725,7 @@ export function createSmartMongoRepo<
       for (const idChunk of chunks) {
         const updateOperation = buildUpdateOperation(update);
         await collection.updateMany(
-          applyConstraints(
-            isDetachedIdentity
-              ? ({ id: { $in: idChunk } } as any)
-              : ({ _id: { $in: idChunk } } as any),
-            options
-          ),
+          applyConstraints(idsFilter(idChunk), options),
           updateOperation,
           withSessionOptions()
         );
@@ -753,7 +755,7 @@ export function createSmartMongoRepo<
           const doc = toMongoDoc(entity, 'upsert');
           if (isDetachedIdentity) {
             const { _id: internalId, ...docWithoutInternal } = doc as any;
-            const filter = applyConstraints({ id: (doc as any).id }, options);
+            const filter = applyConstraints(idFilter((doc as any).id), options);
             const update = applyVersion(
               'upsert',
               applyTimestamps('upsert', {
@@ -786,11 +788,7 @@ export function createSmartMongoRepo<
       const chunks = chunk(ids, MONGODB_IN_OPERATOR_MAX_CLAUSES);
 
       for (const idChunk of chunks) {
-        const filter = applyConstraints(
-          isDetachedIdentity
-            ? ({ id: { $in: idChunk } } as any)
-            : ({ _id: { $in: idChunk } } as any)
-        );
+        const filter = applyConstraints(idsFilter(idChunk));
         if (softDeleteEnabled) {
           const updateOperation = applyVersion(
             'delete',
@@ -821,13 +819,7 @@ export function createSmartMongoRepo<
         return [];
       }
 
-      // convert id to _id only in synced mode
-      const { id, ...restFilter } = filter as any;
-      const mongoFilter = isDetachedIdentity
-        ? (filter as any)
-        : id
-        ? ({ _id: id, ...restFilter } as any)
-        : restFilter;
+      const mongoFilter = convertFilter(filter);
 
       const mongoProjection = projection
         ? Object.fromEntries(Object.keys(projection).map((k) => [k, 1]))
@@ -852,13 +844,7 @@ export function createSmartMongoRepo<
     },
 
     count: async (filter: Partial<T>): Promise<number> => {
-      // convert id to _id only in synced mode
-      const { id, ...restFilter } = filter as any;
-      const mongoFilter = isDetachedIdentity
-        ? (filter as any)
-        : id
-        ? ({ _id: id, ...restFilter } as any)
-        : restFilter;
+      const mongoFilter = convertFilter(filter);
       return await collection.countDocuments(
         applyConstraints(mongoFilter),
         withSessionOptions()
