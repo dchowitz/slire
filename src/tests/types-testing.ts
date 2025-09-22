@@ -1,10 +1,10 @@
+import { Collection } from 'mongodb';
 import {
   ManagedFields,
   OptionalKeys,
   RepositoryConfig,
   UpdateOperation,
-} from '@chd/smart-repo';
-import { Collection } from 'mongodb';
+} from '../';
 
 type Prettify<T> = {
   [K in keyof T]: T[K];
