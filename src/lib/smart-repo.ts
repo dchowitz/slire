@@ -2,14 +2,13 @@ import { chunk } from 'lodash-es';
 import { ClientSession, Collection, MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  repoConfig,
-  WriteOp,
-  SHARED_CONSTANTS,
-  RepositoryConfig,
   ManagedFields,
-  UpdateOperation,
-  Projection,
   Projected,
+  Projection,
+  repoConfig,
+  RepositoryConfig,
+  UpdateOperation,
+  WriteOp,
 } from './repo-config';
 
 // https://www.mongodb.com/resources/basics/databases/acid-transactions#:~:text=Limit%20each,1%2C000%20document%20modifications.
@@ -23,9 +22,6 @@ const MONGODB_IN_OPERATOR_MAX_CLAUSES = 100;
 type Prettify<T> = {
   [K in keyof T]: T[K];
 } & {};
-
-// Use shared constants - only keep the ones we actually need
-const SOFT_DELETE_KEY = SHARED_CONSTANTS.SOFT_DELETE_KEY;
 
 // MongoDB repository type with additional MongoDB-specific helpers and transaction methods
 // Prettified to show expanded type in IDE tooltips instead of complex intersection
@@ -252,13 +248,13 @@ export function createSmartMongoRepo<
 
   // MongoDB-specific helpers using shared config
   const SCOPE_KEYS = new Set<string>([...Object.keys(scope)]);
-  const SOFT_DELETE_MARK = { [SOFT_DELETE_KEY]: true };
+  const SOFT_DELETE_MARK = { [config.getSoftDeleteKey()]: true };
 
   // Get timestamp keys from config
   const timestampKeys = config.getTimestampKeys();
-  const CREATED_KEY = timestampKeys.createdAt as string;
-  const UPDATED_KEY = timestampKeys.updatedAt as string;
-  const DELETED_KEY = timestampKeys.deletedAt as string;
+  const CREATED_KEY = timestampKeys.createdAt;
+  const UPDATED_KEY = timestampKeys.updatedAt;
+  const DELETED_KEY = timestampKeys.deletedAt;
 
   // Validate scope doesn't use readonly fields
   const readOnlyFieldsInScope = Object.keys(scope).filter((f) =>
@@ -407,7 +403,11 @@ export function createSmartMongoRepo<
   ): any {
     const includeSoftDeleted = options?.includeSoftDeleted ?? false;
     return config.softDeleteEnabled && !includeSoftDeleted
-      ? { ...input, ...scope, [SOFT_DELETE_KEY]: { $exists: false } }
+      ? {
+          ...input,
+          ...scope,
+          [config.getSoftDeleteKey()]: { $exists: false },
+        }
       : { ...input, ...scope };
   }
 
