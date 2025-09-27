@@ -2215,6 +2215,36 @@ describe('createSmartMongoRepo', function () {
       ).toThrow('Cannot update readonly properties: _id, _createdAt, tenantId');
     });
 
+    it('buildUpdateOperation applies trace context', async () => {
+      const traceContext = { userId: 'user123', requestId: 'req456' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+      });
+
+      const entity = createTestEntity({ name: 'Test Entity' });
+      const id = await repo.create(entity);
+
+      // Use buildUpdateOperation directly with merge trace
+      const updateOp = repo.buildUpdateOperation(
+        { set: { name: 'Updated Name' } },
+        { operation: 'direct-update', source: 'admin-panel' }
+      );
+
+      await repo.collection.updateOne({ _id: id }, updateOp);
+
+      const rawDoc = await rawTestCollection().findOne({ _id: id });
+      expect(rawDoc._trace).toMatchObject({
+        userId: 'user123',
+        requestId: 'req456',
+        operation: 'direct-update',
+        source: 'admin-panel',
+        _op: 'update',
+      });
+      expect(rawDoc._trace._at).toBeInstanceOf(Date);
+    });
+
     it('applyConstraints with default behavior', async () => {
       const acmeRepo = createSmartMongoRepo({
         collection: testCollection(),
@@ -2685,6 +2715,302 @@ describe('createSmartMongoRepo', function () {
       ).toThrow(
         'Readonly fields found in scope: _v, _deleted, created, _updatedAt'
       );
+    });
+  });
+
+  describe('tracing', () => {
+    it('should not apply trace when traceContext is not provided', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+
+      const entity = createTestEntity({ name: 'Test Entity' });
+      const id = await repo.create(entity);
+
+      const rawDoc = await rawTestCollection().findOne({ _id: id });
+      expect(rawDoc).not.toHaveProperty('_trace');
+    });
+
+    it('should apply trace with latest strategy by default', async () => {
+      const traceContext = { userId: 'user123', requestId: 'req456' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+      });
+
+      const entity = createTestEntity({ name: 'Test Entity' });
+      const id = await repo.create(entity);
+
+      const rawDoc = await rawTestCollection().findOne({ _id: id });
+      expect(rawDoc._trace).toMatchObject({
+        userId: 'user123',
+        requestId: 'req456',
+        _op: 'create',
+      });
+      expect(rawDoc._trace._at).toBeInstanceOf(Date);
+    });
+
+    it('should use custom traceKey when specified', async () => {
+      const traceContext = { userId: 'user123' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+        options: { traceKey: 'audit' },
+      });
+
+      const entity = createTestEntity({ name: 'Test Entity' });
+      const id = await repo.create(entity);
+
+      const rawDoc = await rawTestCollection().findOne({ _id: id });
+      expect(rawDoc).not.toHaveProperty('_trace');
+      expect(rawDoc.audit).toMatchObject({
+        userId: 'user123',
+        _op: 'create',
+      });
+    });
+
+    it('should merge trace context in operations', async () => {
+      const traceContext = { userId: 'user123', requestId: 'req456' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+      });
+
+      const entity = createTestEntity({ name: 'Test Entity' });
+      const id = await repo.create(entity, {
+        mergeTrace: { operation: 'import-csv', source: 'upload.csv' },
+      });
+
+      const rawDoc = await rawTestCollection().findOne({ _id: id });
+      expect(rawDoc._trace).toMatchObject({
+        userId: 'user123',
+        requestId: 'req456',
+        operation: 'import-csv',
+        source: 'upload.csv',
+        _op: 'create',
+      });
+    });
+
+    it('should use bounded strategy when configured', async () => {
+      const traceContext = { userId: 'user123' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+        options: {
+          traceStrategy: 'bounded',
+          traceLimit: 3,
+        },
+      });
+
+      const entity = createTestEntity({ name: 'Test Entity' });
+      const id = await repo.create(entity);
+
+      // First operation
+      const rawDoc1 = await rawTestCollection().findOne({ _id: id });
+      expect(rawDoc1._trace).toHaveLength(1);
+      expect(rawDoc1._trace[0]._op).toBe('create');
+
+      // Update operations
+      await repo.update(id, { set: { name: 'Updated 1' } });
+      await repo.update(id, { set: { name: 'Updated 2' } });
+      await repo.update(id, { set: { name: 'Updated 3' } });
+
+      const rawDoc2 = await rawTestCollection().findOne({ _id: id });
+      expect(rawDoc2._trace).toHaveLength(3); // Should keep last 3
+      expect(rawDoc2._trace.map((t: any) => t._op)).toEqual([
+        'update',
+        'update',
+        'update',
+      ]);
+    });
+
+    it('should throw error when bounded strategy is used without traceLimit', () => {
+      const traceContext = { userId: 'user123' };
+      expect(() =>
+        createSmartMongoRepo({
+          collection: testCollection(),
+          mongoClient: mongo.client,
+          traceContext,
+          options: {
+            traceStrategy: 'bounded',
+          },
+        })
+      ).toThrow('traceLimit is required when traceStrategy is "bounded"');
+    });
+
+    it('should apply trace to createMany operations', async () => {
+      const traceContext = { userId: 'user123' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+      });
+
+      const entities = [
+        createTestEntity({ name: 'Entity 1' }),
+        createTestEntity({ name: 'Entity 2' }),
+      ];
+      const ids = await repo.createMany(entities, {
+        mergeTrace: { operation: 'bulk-import' },
+      });
+
+      for (const id of ids) {
+        const rawDoc = await rawTestCollection().findOne({ _id: id });
+        expect(rawDoc._trace).toMatchObject({
+          userId: 'user123',
+          operation: 'bulk-import',
+          _op: 'create',
+        });
+      }
+    });
+
+    it('should apply trace to update operations', async () => {
+      const traceContext = { userId: 'user123' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+      });
+
+      const entity = createTestEntity({ name: 'Test Entity' });
+      const id = await repo.create(entity);
+
+      await repo.update(
+        id,
+        { set: { name: 'Updated Name' } },
+        { mergeTrace: { operation: 'user-edit' } }
+      );
+
+      const rawDoc = await rawTestCollection().findOne({ _id: id });
+      expect(rawDoc._trace).toMatchObject({
+        userId: 'user123',
+        operation: 'user-edit',
+        _op: 'update',
+      });
+    });
+
+    it('should apply trace to updateMany operations', async () => {
+      const traceContext = { userId: 'user123' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+      });
+
+      const entities = [
+        createTestEntity({ name: 'Entity 1' }),
+        createTestEntity({ name: 'Entity 2' }),
+      ];
+      const ids = await repo.createMany(entities);
+
+      await repo.updateMany(
+        ids,
+        { set: { isActive: false } },
+        { mergeTrace: { operation: 'bulk-deactivate' } }
+      );
+
+      for (const id of ids) {
+        const rawDoc = await rawTestCollection().findOne({ _id: id });
+        expect(rawDoc._trace).toMatchObject({
+          userId: 'user123',
+          operation: 'bulk-deactivate',
+          _op: 'update',
+        });
+      }
+    });
+
+    it('should apply trace to soft delete operations', async () => {
+      const traceContext = { userId: 'user123' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+        options: { softDelete: true },
+      });
+
+      const entity = createTestEntity({ name: 'Test Entity' });
+      const id = await repo.create(entity);
+
+      await repo.delete(id, {
+        mergeTrace: { operation: 'user-cancel', reason: 'duplicate' },
+      });
+
+      const rawDoc = await rawTestCollection().findOne({ _id: id });
+      expect(rawDoc._trace).toMatchObject({
+        userId: 'user123',
+        operation: 'user-cancel',
+        reason: 'duplicate',
+        _op: 'delete',
+      });
+    });
+
+    it('should not apply trace to hard delete operations', async () => {
+      const traceContext = { userId: 'user123' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+        options: { softDelete: false },
+      });
+
+      const entity = createTestEntity({ name: 'Test Entity' });
+      const id = await repo.create(entity);
+
+      await repo.delete(id, {
+        mergeTrace: { operation: 'permanent-delete' },
+      });
+
+      // Document should be completely removed, so no trace to check
+      const rawDoc = await rawTestCollection().findOne({ _id: id });
+      expect(rawDoc).toBeNull();
+    });
+
+    it('should include trace key in readonly keys', async () => {
+      const traceContext = { userId: 'user123' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+      });
+
+      const entity = createTestEntity({ name: 'Test Entity' });
+      const id = await repo.create(entity);
+
+      // Should not allow updating trace field
+      await expect(
+        repo.update(id, { set: { _trace: { malicious: 'data' } } } as any)
+      ).rejects.toThrow('Cannot update readonly properties');
+    });
+
+    it('should preserve traceContext in session-aware repositories', async () => {
+      const traceContext = { userId: 'user123', sessionId: 'sess456' };
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        traceContext,
+      });
+
+      let createdId = '';
+      await repo.runTransaction(async (txRepo) => {
+        const entity = createTestEntity({ name: 'Transactional Entity' });
+        createdId = await txRepo.create(entity, {
+          mergeTrace: { operation: 'transaction-create' },
+        });
+      });
+
+      // Check the document after transaction is committed
+      const rawDoc = await rawTestCollection().findOne({ _id: createdId });
+      expect(rawDoc._trace).toMatchObject({
+        userId: 'user123',
+        sessionId: 'sess456',
+        operation: 'transaction-create',
+        _op: 'create',
+      });
     });
   });
 });
