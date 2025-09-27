@@ -54,6 +54,9 @@ export type RepositoryConfig<T> = {
   timestampKeys?: TimestampConfig<T>;
   version?: true | NumberKeys<T>;
   identity?: 'synced' | 'detached';
+  traceKey?: string;
+  traceStrategy?: 'latest' | 'bounded';
+  traceLimit?: number;
 };
 
 // Repo-managed fields part of T (based on repo config and scope).
@@ -86,13 +89,17 @@ export type ManagedFields<
       : never)
   | (Config['version'] extends keyof T
       ? Extract<Config['version'], keyof T>
-      : never);
+      : never)
+  | (Config['traceKey'] extends string
+      ? Extract<Config['traceKey'], keyof T>
+      : Extract<typeof DEFAULT_TRACE_KEY, keyof T>);
 
 const SOFT_DELETE_KEY = '_deleted';
 const DEFAULT_VERSION_KEY = '_version';
 const DEFAULT_CREATED_AT_KEY = '_createdAt';
 const DEFAULT_UPDATED_AT_KEY = '_updatedAt';
 const DEFAULT_DELETED_AT_KEY = '_deletedAt';
+const DEFAULT_TRACE_KEY = '_trace';
 
 // MongoDB repository type with additional MongoDB-specific helpers and transaction methods
 // Prettified to show expanded type in IDE tooltips instead of complex intersection
@@ -259,12 +266,14 @@ export function createSmartMongoRepo<
   collection,
   mongoClient,
   scope = {} as Scope,
+  traceContext,
   options,
   session,
 }: {
   collection: Collection<T>;
   mongoClient: MongoClient;
   scope?: Scope;
+  traceContext?: any;
   options?: Config;
   session?: ClientSession;
 }): MongoRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> {
@@ -274,6 +283,17 @@ export function createSmartMongoRepo<
   const timestampKeys = options?.timestampKeys;
   const identityMode = options?.identity ?? 'synced';
   const isDetachedIdentity = identityMode === 'detached';
+
+  // tracing configuration
+  const traceEnabled = traceContext !== undefined;
+  const traceKey = options?.traceKey ?? DEFAULT_TRACE_KEY;
+  const traceStrategy = options?.traceStrategy ?? 'latest';
+  const traceLimit = options?.traceLimit;
+
+  // validate trace configuration
+  if (traceEnabled && traceStrategy === 'bounded' && !traceLimit) {
+    throw new Error('traceLimit is required when traceStrategy is "bounded"');
+  }
 
   // centralized id handling helpers
   const DATASTORE_ID_KEY = isDetachedIdentity ? 'id' : '_id';
@@ -342,6 +362,11 @@ export function createSmartMongoRepo<
     configuredKeys.push(VERSION_KEY);
   }
 
+  if (traceEnabled) {
+    READONLY_KEYS.add(traceKey);
+    configuredKeys.push(traceKey);
+  }
+
   // validate that all configured keys are unique to prevent undefined behavior
   const duplicateKeys = duplicatesBy(configuredKeys, (key) => key);
   if (duplicateKeys.length > 0) {
@@ -376,6 +401,11 @@ export function createSmartMongoRepo<
   // add version field to hidden meta-keys if using internal field
   if (versionConfig === true) {
     HIDDEN_META_KEYS.add(VERSION_KEY);
+  }
+
+  // add trace field to hidden meta-keys if using default field
+  if (traceEnabled && traceKey === DEFAULT_TRACE_KEY) {
+    HIDDEN_META_KEYS.add(traceKey);
   }
 
   // helper to centralize timestamp handling
@@ -465,6 +495,53 @@ export function createSmartMongoRepo<
         const ex: never = op;
         throw new Error(`Unexpected op: ${ex}`);
     }
+  }
+
+  // helper to centralize trace handling
+  function applyTrace(
+    op: WriteOp,
+    mongoUpdate: any,
+    contextOverride?: any
+  ): any {
+    if (!traceEnabled) {
+      return mongoUpdate;
+    }
+
+    const context = contextOverride
+      ? { ...traceContext, ...contextOverride }
+      : traceContext;
+    if (!context) {
+      return mongoUpdate;
+    }
+
+    const traceValue = {
+      ...context,
+      _op: op,
+      _at: new Date(),
+    };
+
+    if (traceStrategy === 'latest') {
+      return {
+        ...mongoUpdate,
+        $set: {
+          ...(mongoUpdate.$set ?? {}),
+          [traceKey]: traceValue,
+        },
+      };
+    } else if (traceStrategy === 'bounded') {
+      return {
+        ...mongoUpdate,
+        $push: {
+          ...(mongoUpdate.$push ?? {}),
+          [traceKey]: {
+            $each: [traceValue],
+            $slice: -(traceLimit as number),
+          },
+        },
+      };
+    }
+
+    return mongoUpdate;
   }
 
   function applyConstraints(
@@ -853,6 +930,7 @@ export function createSmartMongoRepo<
         collection,
         mongoClient,
         scope,
+        traceContext,
         options: { ...options },
         session: clientSession,
       });
