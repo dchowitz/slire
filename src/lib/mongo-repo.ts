@@ -111,22 +111,11 @@ export function createSmartMongoRepo<
   options?: Config;
   session?: ClientSession;
 }): MongoRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> {
-  // Create shared configuration helper
-  const config = repoConfig(options ?? ({} as Config), traceContext);
+  const config = repoConfig(options ?? ({} as Config), traceContext, scope);
 
-  // Repository-specific configuration
   const generateIdFn = options?.generateId ?? uuidv4;
   const identityMode = options?.identity ?? 'synced';
   const isDetachedIdentity = identityMode === 'detached';
-
-  // Validate trace configuration (since it's MongoDB-specific validation)
-  if (
-    config.traceEnabled &&
-    config.getTraceStrategy() === 'bounded' &&
-    !config.getTraceLimit()
-  ) {
-    throw new Error('traceLimit is required when traceStrategy is "bounded"');
-  }
 
   // centralized id handling helpers
   const DATASTORE_ID_KEY = isDetachedIdentity ? 'id' : '_id';
@@ -149,23 +138,12 @@ export function createSmartMongoRepo<
       ? idFilter((doc as any).id)
       : ({ _id: (doc as any)._id } as any);
 
-  const SCOPE_KEYS = new Set<string>([...Object.keys(scope)]);
   const SOFT_DELETE_MARK = { [config.getSoftDeleteKey()]: true };
 
   const timestampKeys = config.getTimestampKeys();
   const CREATED_KEY = timestampKeys.createdAt;
   const UPDATED_KEY = timestampKeys.updatedAt;
   const DELETED_KEY = timestampKeys.deletedAt;
-
-  // Validate scope doesn't use readonly fields
-  const readOnlyFieldsInScope = Object.keys(scope).filter((f) =>
-    config.isReadOnlyField(f)
-  );
-  if (readOnlyFieldsInScope.length > 0) {
-    throw new Error(
-      `Readonly fields found in scope: ${readOnlyFieldsInScope.join(', ')}`
-    );
-  }
 
   // MongoDB-specific timestamp handling using shared config
   function applyTimestamps(op: WriteOp, mongoUpdate: any): any {
@@ -312,40 +290,6 @@ export function createSmartMongoRepo<
       : { ...input, ...scope };
   }
 
-  function validateNoReadonly(
-    keys: string[],
-    operation: WriteOp | 'unset'
-  ): void {
-    const readonlyKeys = keys.filter((key) => config.isReadOnlyField(key));
-
-    // For update and unset operations, also check scope keys are not being modified
-    const scopeKeys =
-      operation === 'update' || operation === 'unset'
-        ? keys.filter((key) => SCOPE_KEYS.has(key))
-        : [];
-
-    const conflictingKeys = [...readonlyKeys, ...scopeKeys];
-
-    if (conflictingKeys.length > 0) {
-      throw new Error(
-        `Cannot ${operation} readonly properties: ${conflictingKeys.join(', ')}`
-      );
-    }
-  }
-
-  function validateScopeProperties(
-    entity: any,
-    operation: WriteOp | 'unset'
-  ): void {
-    for (const [key, expectedValue] of Object.entries(scope)) {
-      if (key in entity && entity[key] !== expectedValue) {
-        throw new Error(
-          `Cannot ${operation} entity: scope property '${key}' must be '${expectedValue}', got '${entity[key]}'`
-        );
-      }
-    }
-  }
-
   // helper to map Mongo doc to entity
   function fromMongoDoc<P extends Projection<T>>(
     doc: any,
@@ -389,7 +333,7 @@ export function createSmartMongoRepo<
     const { id, ...entityData } = entity;
     // Remove _id if it exists (shouldn't but might be present in some edge cases)
     const { _id, ...cleanEntityData } = entityData as any;
-    validateScopeProperties(cleanEntityData, op);
+    config.validateScopeProperties(cleanEntityData, op);
 
     // Strip all system-managed fields to prevent external manipulation
     const strippedEntityData = Object.fromEntries(
@@ -435,12 +379,12 @@ export function createSmartMongoRepo<
     }
 
     if (set) {
-      validateNoReadonly(Object.keys(set), 'update');
+      config.validateNoReadonly(Object.keys(set), 'update');
       mongoUpdate.$set = deepFilterUndefined(set);
     }
 
     if (unset) {
-      validateNoReadonly(unset.map(String), 'unset');
+      config.validateNoReadonly(unset.map(String), 'unset');
       mongoUpdate.$unset = unset.reduce((acc, key) => {
         acc[String(key)] = '';
         return acc;

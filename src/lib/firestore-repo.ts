@@ -116,28 +116,14 @@ export function createSmartFirestoreRepo<
   options?: Config;
   transaction?: Transaction;
 }): FirestoreRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> {
-  // Create shared configuration helper
-  const config = repoConfig(options ?? ({} as Config), traceContext);
+  const config = repoConfig(options ?? ({} as Config), traceContext, scope);
 
-  // Repository-specific configuration
   const generateIdFn = options?.generateId ?? uuidv4;
   const identityMode = options?.identity ?? 'synced';
   const isDetachedIdentity = identityMode === 'detached';
 
-  // Validate trace configuration
-  if (
-    config.traceEnabled &&
-    config.getTraceStrategy() === 'bounded' &&
-    !config.getTraceLimit()
-  ) {
-    throw new Error('traceLimit is required when traceStrategy is "bounded"');
-  }
-
-  // centralized id handling helpers
   const getDocRef = (id: string): DocumentReference<T> => collection.doc(id);
 
-  // Firestore-specific helpers using shared config
-  const SCOPE_KEYS = new Set<string>([...Object.keys(scope)]);
   const SOFT_DELETE_MARK = { [config.getSoftDeleteKey()]: true };
 
   // Get timestamp keys from config
@@ -145,16 +131,6 @@ export function createSmartFirestoreRepo<
   const CREATED_KEY = timestampKeys.createdAt;
   const UPDATED_KEY = timestampKeys.updatedAt;
   const DELETED_KEY = timestampKeys.deletedAt;
-
-  // Validate scope doesn't use readonly fields
-  const readOnlyFieldsInScope = Object.keys(scope).filter((f) =>
-    config.isReadOnlyField(f)
-  );
-  if (readOnlyFieldsInScope.length > 0) {
-    throw new Error(
-      `Readonly fields found in scope: ${readOnlyFieldsInScope.join(', ')}`
-    );
-  }
 
   // Firestore-specific timestamp handling using shared config
   function applyTimestamps(
@@ -290,40 +266,6 @@ export function createSmartFirestoreRepo<
     return constrainedQuery;
   }
 
-  function validateNoReadonly(
-    keys: string[],
-    operation: WriteOp | 'unset'
-  ): void {
-    const readonlyKeys = keys.filter((key) => config.isReadOnlyField(key));
-
-    // For update and unset operations, also check scope keys are not being modified
-    const scopeKeys =
-      operation === 'update' || operation === 'unset'
-        ? keys.filter((key) => SCOPE_KEYS.has(key))
-        : [];
-
-    const conflictingKeys = [...readonlyKeys, ...scopeKeys];
-
-    if (conflictingKeys.length > 0) {
-      throw new Error(
-        `Cannot ${operation} readonly properties: ${conflictingKeys.join(', ')}`
-      );
-    }
-  }
-
-  function validateScopeProperties(
-    entity: any,
-    operation: WriteOp | 'unset'
-  ): void {
-    for (const [key, expectedValue] of Object.entries(scope)) {
-      if (key in entity && entity[key] !== expectedValue) {
-        throw new Error(
-          `Cannot ${operation} entity: scope property '${key}' must be '${expectedValue}', got '${entity[key]}'`
-        );
-      }
-    }
-  }
-
   // helper to map Firestore doc to entity
   function fromFirestoreDoc<P extends Projection<T>>(
     doc: QueryDocumentSnapshot<T> | DocumentSnapshot<T>,
@@ -374,7 +316,7 @@ export function createSmartFirestoreRepo<
     op: 'create'
   ): { docId: string; docData: any } {
     const { id, ...entityData } = entity;
-    validateScopeProperties(entityData, op);
+    config.validateScopeProperties(entityData, op);
 
     // Strip all system-managed fields to prevent external manipulation
     const strippedEntityData = Object.fromEntries(
@@ -424,12 +366,12 @@ export function createSmartFirestoreRepo<
     }
 
     if (set) {
-      validateNoReadonly(Object.keys(set), 'update');
+      config.validateNoReadonly(Object.keys(set), 'update');
       Object.assign(firestoreUpdate, deepFilterUndefined(set));
     }
 
     if (unset) {
-      validateNoReadonly(unset.map(String), 'unset');
+      config.validateNoReadonly(unset.map(String), 'unset');
       for (const key of unset) {
         firestoreUpdate[String(key)] = FieldValue.delete();
       }

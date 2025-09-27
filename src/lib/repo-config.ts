@@ -89,7 +89,8 @@ export type WriteOp = 'create' | 'update' | 'delete';
 // Factory function that creates database-agnostic helper functions
 export function repoConfig<T extends { id: string }>(
   config: RepositoryConfig<T>,
-  traceContext?: any
+  traceContext?: any,
+  scope?: Partial<T>
 ) {
   // Extract configuration values with defaults
   const softDeleteEnabled = config.softDelete === true;
@@ -107,6 +108,15 @@ export function repoConfig<T extends { id: string }>(
   const traceKey = config.traceKey ?? DEFAULT_TRACE_KEY;
   const traceStrategy = config.traceStrategy ?? 'latest';
   const traceLimit = config.traceLimit;
+
+  // Validate trace configuration
+  if (traceEnabled && traceStrategy === 'bounded' && !traceLimit) {
+    throw new Error('traceLimit is required when traceStrategy is "bounded"');
+  }
+
+  // Scope-related logic
+  const scopeObj = scope ?? ({} as Partial<T>);
+  const SCOPE_KEYS = new Set<string>(Object.keys(scopeObj));
 
   // Build readonly and managed field sets
   const READONLY_KEYS = new Set<string>(['id', '_id']);
@@ -163,6 +173,16 @@ export function repoConfig<T extends { id: string }>(
     if (traceKey === DEFAULT_TRACE_KEY) {
       HIDDEN_META_KEYS.add(traceKey);
     }
+  }
+
+  // Validate scope doesn't use readonly fields
+  const readOnlyFieldsInScope = Object.keys(scopeObj).filter((f) =>
+    READONLY_KEYS.has(f)
+  );
+  if (readOnlyFieldsInScope.length > 0) {
+    throw new Error(
+      `Readonly fields found in scope: ${readOnlyFieldsInScope.join(', ')}`
+    );
   }
 
   // Validation - ensure no duplicate keys
@@ -291,6 +311,47 @@ export function repoConfig<T extends { id: string }>(
 
     getVersionKey: (): string => {
       return VERSION_KEY;
+    },
+
+    // Scope helpers
+    getScopeKeys: (): Set<string> => {
+      return SCOPE_KEYS;
+    },
+
+    validateNoReadonly: (
+      keys: string[],
+      operation: WriteOp | 'unset'
+    ): void => {
+      const readonlyKeys = keys.filter((key) => READONLY_KEYS.has(key));
+
+      // For update and unset operations, also check scope keys are not being modified
+      const scopeKeys =
+        operation === 'update' || operation === 'unset'
+          ? keys.filter((key) => SCOPE_KEYS.has(key))
+          : [];
+
+      const conflictingKeys = [...readonlyKeys, ...scopeKeys];
+
+      if (conflictingKeys.length > 0) {
+        throw new Error(
+          `Cannot ${operation} readonly properties: ${conflictingKeys.join(
+            ', '
+          )}`
+        );
+      }
+    },
+
+    validateScopeProperties: (
+      entity: any,
+      operation: WriteOp | 'unset'
+    ): void => {
+      for (const [key, expectedValue] of Object.entries(scopeObj)) {
+        if (key in entity && entity[key] !== expectedValue) {
+          throw new Error(
+            `Cannot ${operation} entity: scope property '${key}' must be '${expectedValue}', got '${entity[key]}'`
+          );
+        }
+      }
     },
   };
 }
