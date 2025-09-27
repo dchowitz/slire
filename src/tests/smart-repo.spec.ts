@@ -1,10 +1,10 @@
 import { omit, range, sortBy } from 'lodash-es';
 import { Collection } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
+import { createSmartMongoRepo } from '../lib/mongo-repo';
 import {
   combineSpecs,
   CreateManyPartialFailure,
-  createSmartMongoRepo,
   SmartRepo,
   Specification,
 } from '../lib/smart-repo';
