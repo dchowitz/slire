@@ -4,7 +4,7 @@ import {
   OptionalKeys,
   RepositoryConfig,
   UpdateOperation,
-} from '../';
+} from '../lib/repo-config';
 
 type Prettify<T> = {
   [K in keyof T]: T[K];

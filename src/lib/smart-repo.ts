@@ -1,7 +1,16 @@
-import { duplicatesBy } from '@chd/utils';
 import { chunk } from 'lodash-es';
 import { ClientSession, Collection, MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  repoConfig,
+  WriteOp,
+  SHARED_CONSTANTS,
+  RepositoryConfig,
+  ManagedFields,
+  UpdateOperation,
+  Projection,
+  Projected,
+} from './repo-config';
 
 // https://www.mongodb.com/resources/basics/databases/acid-transactions#:~:text=Limit%20each,1%2C000%20document%20modifications.
 const MONGODB_MAX_MODIFICATIONS_PER_TRANSACTION = 1000;
@@ -10,119 +19,13 @@ const MONGODB_MAX_MODIFICATIONS_PER_TRANSACTION = 1000;
 // https://www.mongodb.com/docs/manual/reference/operator/query/in/#syntax
 const MONGODB_IN_OPERATOR_MAX_CLAUSES = 100;
 
-// projection type: { field1: true, field2: true }
-export type Projection<T> = Partial<Record<keyof T, true>>;
-
 // utility type to expand complex types for better IDE tooltips
 type Prettify<T> = {
   [K in keyof T]: T[K];
 } & {};
 
-// mapped type for projected result
-type Projected<T, P extends Projection<T> | undefined> = Prettify<
-  P extends Projection<T>
-    ? { [K in keyof P]: K extends keyof T ? T[K] : never }
-    : T
->;
-
-// timestamp configuration type
-type TimestampConfig<T> = {
-  createdAt?: DateKeys<T>;
-  updatedAt?: DateKeys<T>;
-  deletedAt?: DateKeys<T>;
-};
-
-// utility type to extract keys of properties that can be undefined
-export type OptionalKeys<T> = {
-  [K in keyof T]: undefined extends T[K] ? K : never;
-}[keyof T];
-
-// utility type to extract keys of properties that are numbers
-type NumberKeys<T> = {
-  [K in keyof T]: T[K] extends number ? K : never;
-}[keyof T];
-
-// utility type to extract keys of properties that are Dates
-type DateKeys<T> = {
-  [K in keyof T]: T[K] extends Date
-    ? K
-    : T[K] extends Date | undefined
-    ? K
-    : never;
-}[keyof T];
-
-// utility type to extract keys of properties that are objects (not primitives, excluding Date)
-type ObjectKeys<T> = {
-  [K in keyof T]: T[K] extends object
-    ? T[K] extends Date
-      ? never
-      : K
-    : T[K] extends object | undefined
-    ? T[K] extends Date | undefined
-      ? never
-      : K
-    : never;
-}[keyof T] &
-  string;
-
-export type UpdateOperation<T> =
-  | { set: Partial<T>; unset?: never }
-  | { set?: never; unset: OptionalKeys<T>[] }
-  | { set: Partial<T>; unset: OptionalKeys<T>[] };
-
-export type RepositoryConfig<T> = {
-  generateId?: () => string;
-  softDelete?: boolean;
-  traceTimestamps?: true | 'server' | (() => Date);
-  timestampKeys?: TimestampConfig<T>;
-  version?: true | NumberKeys<T>;
-  identity?: 'synced' | 'detached';
-  traceKey?: ObjectKeys<T>;
-  traceStrategy?: 'latest' | 'bounded';
-  traceLimit?: number;
-};
-
-// Repo-managed fields part of T (based on repo config and scope).
-export type ManagedFields<
-  T,
-  Config extends RepositoryConfig<T>,
-  Scope extends Partial<T>
-> =
-  | 'id'
-  | Extract<keyof Scope, keyof T>
-  | (Config['softDelete'] extends true
-      ? Extract<typeof SOFT_DELETE_KEY, keyof T>
-      : never)
-  | (Config['traceTimestamps'] extends undefined
-      ? never
-      : Extract<
-          | typeof DEFAULT_CREATED_AT_KEY
-          | typeof DEFAULT_UPDATED_AT_KEY
-          | typeof DEFAULT_DELETED_AT_KEY,
-          keyof T
-        >)
-  | (Config['timestampKeys'] extends undefined
-      ? never
-      : Extract<
-          Config['timestampKeys'][keyof Config['timestampKeys']],
-          keyof T
-        >)
-  | (Config['version'] extends true
-      ? Extract<typeof DEFAULT_VERSION_KEY, keyof T>
-      : never)
-  | (Config['version'] extends keyof T
-      ? Extract<Config['version'], keyof T>
-      : never)
-  | (Config['traceKey'] extends string
-      ? Extract<Config['traceKey'], keyof T>
-      : Extract<typeof DEFAULT_TRACE_KEY, keyof T>);
-
-const SOFT_DELETE_KEY = '_deleted';
-const DEFAULT_VERSION_KEY = '_version';
-const DEFAULT_CREATED_AT_KEY = '_createdAt';
-const DEFAULT_UPDATED_AT_KEY = '_updatedAt';
-const DEFAULT_DELETED_AT_KEY = '_deletedAt';
-const DEFAULT_TRACE_KEY = '_trace';
+// Use shared constants - only keep the ones we actually need
+const SOFT_DELETE_KEY = SHARED_CONSTANTS.SOFT_DELETE_KEY;
 
 // MongoDB repository type with additional MongoDB-specific helpers and transaction methods
 // Prettified to show expanded type in IDE tooltips instead of complex intersection
@@ -309,21 +212,20 @@ export function createSmartMongoRepo<
   options?: Config;
   session?: ClientSession;
 }): MongoRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> {
-  const configuredKeys: string[] = [];
+  // Create shared configuration helper
+  const config = repoConfig(options ?? ({} as Config), traceContext);
+
+  // Repository-specific configuration
   const generateIdFn = options?.generateId ?? uuidv4;
-  const softDeleteEnabled = options?.softDelete === true;
-  const timestampKeys = options?.timestampKeys;
   const identityMode = options?.identity ?? 'synced';
   const isDetachedIdentity = identityMode === 'detached';
 
-  // tracing configuration
-  const traceEnabled = traceContext !== undefined;
-  const traceKey = options?.traceKey ?? DEFAULT_TRACE_KEY;
-  const traceStrategy = options?.traceStrategy ?? 'latest';
-  const traceLimit = options?.traceLimit;
-
-  // validate trace configuration
-  if (traceEnabled && traceStrategy === 'bounded' && !traceLimit) {
+  // Validate trace configuration (since it's MongoDB-specific validation)
+  if (
+    config.traceEnabled &&
+    config.getTraceStrategy() === 'bounded' &&
+    !config.getTraceLimit()
+  ) {
     throw new Error('traceLimit is required when traceStrategy is "bounded"');
   }
 
@@ -348,71 +250,19 @@ export function createSmartMongoRepo<
       ? idFilter((doc as any).id)
       : ({ _id: (doc as any)._id } as any);
 
-  // if timestampKeys are configured, enable tracing by default
-  const effectiveTraceTimestamps =
-    options?.traceTimestamps ?? (timestampKeys ? true : undefined);
-
-  // version configuration
-  const versionConfig = options?.version;
-  const versionEnabled = versionConfig !== undefined;
-  const VERSION_KEY =
-    versionConfig === true
-      ? DEFAULT_VERSION_KEY
-      : String(versionConfig ?? DEFAULT_VERSION_KEY);
-
+  // MongoDB-specific helpers using shared config
   const SCOPE_KEYS = new Set<string>([...Object.keys(scope)]);
-  const READONLY_KEYS = new Set<string>(['id', '_id']);
-  const HIDDEN_META_KEYS = new Set<string>([SOFT_DELETE_KEY]);
-
   const SOFT_DELETE_MARK = { [SOFT_DELETE_KEY]: true };
 
-  // use configured or default timestamp keys
-  const CREATED_KEY = String(
-    timestampKeys?.createdAt ?? DEFAULT_CREATED_AT_KEY
-  );
-  const UPDATED_KEY = String(
-    timestampKeys?.updatedAt ?? DEFAULT_UPDATED_AT_KEY
-  );
-  const DELETED_KEY = String(
-    timestampKeys?.deletedAt ?? DEFAULT_DELETED_AT_KEY
-  );
+  // Get timestamp keys from config
+  const timestampKeys = config.getTimestampKeys();
+  const CREATED_KEY = timestampKeys.createdAt as string;
+  const UPDATED_KEY = timestampKeys.updatedAt as string;
+  const DELETED_KEY = timestampKeys.deletedAt as string;
 
-  if (softDeleteEnabled) {
-    READONLY_KEYS.add(SOFT_DELETE_KEY);
-    configuredKeys.push(SOFT_DELETE_KEY);
-  }
-
-  if (effectiveTraceTimestamps) {
-    READONLY_KEYS.add(CREATED_KEY);
-    READONLY_KEYS.add(UPDATED_KEY);
-    READONLY_KEYS.add(DELETED_KEY);
-    configuredKeys.push(CREATED_KEY, UPDATED_KEY, DELETED_KEY);
-  }
-
-  if (versionEnabled) {
-    READONLY_KEYS.add(VERSION_KEY);
-    configuredKeys.push(VERSION_KEY);
-  }
-
-  if (traceEnabled) {
-    READONLY_KEYS.add(traceKey);
-    configuredKeys.push(traceKey);
-  }
-
-  // validate that all configured keys are unique to prevent undefined behavior
-  const duplicateKeys = duplicatesBy(configuredKeys, (key) => key);
-  if (duplicateKeys.length > 0) {
-    throw new Error(
-      `Duplicate keys found in repository configuration: ${duplicateKeys.join(
-        ', '
-      )}. ` +
-        'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
-    );
-  }
-
-  // validate scope is not using any of the read-only fields (makes no sense)
+  // Validate scope doesn't use readonly fields
   const readOnlyFieldsInScope = Object.keys(scope).filter((f) =>
-    READONLY_KEYS.has(f)
+    config.isReadOnlyField(f)
   );
   if (readOnlyFieldsInScope.length > 0) {
     throw new Error(
@@ -420,36 +270,14 @@ export function createSmartMongoRepo<
     );
   }
 
-  if (!timestampKeys?.createdAt) {
-    HIDDEN_META_KEYS.add(CREATED_KEY);
-  }
-  if (!timestampKeys?.updatedAt) {
-    HIDDEN_META_KEYS.add(UPDATED_KEY);
-  }
-  if (!timestampKeys?.deletedAt) {
-    HIDDEN_META_KEYS.add(DELETED_KEY);
-  }
-
-  // add version field to hidden meta-keys if using internal field
-  if (versionConfig === true) {
-    HIDDEN_META_KEYS.add(VERSION_KEY);
-  }
-
-  // add trace field to hidden meta-keys if using default field
-  if (traceEnabled && traceKey === DEFAULT_TRACE_KEY) {
-    HIDDEN_META_KEYS.add(traceKey);
-  }
-
-  // helper to centralize timestamp handling
-  type WriteOp = 'create' | 'update' | 'delete';
+  // MongoDB-specific timestamp handling using shared config
   function applyTimestamps(op: WriteOp, mongoUpdate: any): any {
-    const useMongoTimestamps = effectiveTraceTimestamps === 'server';
-    const now =
-      effectiveTraceTimestamps === true
-        ? new Date()
-        : typeof effectiveTraceTimestamps === 'function'
-        ? effectiveTraceTimestamps()
-        : undefined;
+    if (!config.timestampsEnabled) {
+      return mongoUpdate;
+    }
+
+    const useMongoTimestamps = config.shouldUseServerTimestamp();
+    const now = config.getTimestamp();
 
     if (!useMongoTimestamps && !now) {
       return mongoUpdate;
@@ -499,11 +327,13 @@ export function createSmartMongoRepo<
     };
   }
 
-  // helper to centralize version handling
+  // MongoDB-specific version handling using shared config
   function applyVersion(op: WriteOp, mongoUpdate: any): any {
-    if (!versionEnabled) {
+    if (!config.shouldIncrementVersion()) {
       return mongoUpdate;
     }
+
+    const versionKey = config.getVersionKey();
 
     switch (op) {
       case 'create':
@@ -511,7 +341,7 @@ export function createSmartMongoRepo<
           ...mongoUpdate,
           $setOnInsert: {
             ...(mongoUpdate.$setOnInsert ?? {}),
-            [VERSION_KEY]: 1,
+            [versionKey]: 1,
           },
         };
       case 'update':
@@ -520,7 +350,7 @@ export function createSmartMongoRepo<
           ...mongoUpdate,
           $inc: {
             ...(mongoUpdate.$inc ?? {}),
-            [VERSION_KEY]: 1,
+            [versionKey]: 1,
           },
         };
       default:
@@ -529,28 +359,23 @@ export function createSmartMongoRepo<
     }
   }
 
-  // helper to centralize trace handling
+  // MongoDB-specific trace handling using shared config
   function applyTrace(
     op: WriteOp,
     mongoUpdate: any,
     contextOverride?: any
   ): any {
-    if (!traceEnabled) {
+    if (!config.traceEnabled) {
       return mongoUpdate;
     }
 
-    const context = contextOverride
-      ? { ...traceContext, ...contextOverride }
-      : traceContext;
-    if (!context) {
+    const traceValue = config.buildTraceContext(op, contextOverride);
+    if (!traceValue) {
       return mongoUpdate;
     }
 
-    const traceValue = {
-      ...context,
-      _op: op,
-      _at: new Date(),
-    };
+    const traceStrategy = config.getTraceStrategy();
+    const traceKey = config.getTraceKey();
 
     if (traceStrategy === 'latest') {
       return {
@@ -567,7 +392,7 @@ export function createSmartMongoRepo<
           ...(mongoUpdate.$push ?? {}),
           [traceKey]: {
             $each: [traceValue],
-            $slice: -(traceLimit as number),
+            $slice: -(config.getTraceLimit() as number),
           },
         },
       };
@@ -581,7 +406,7 @@ export function createSmartMongoRepo<
     options?: { includeSoftDeleted?: boolean }
   ): any {
     const includeSoftDeleted = options?.includeSoftDeleted ?? false;
-    return softDeleteEnabled && !includeSoftDeleted
+    return config.softDeleteEnabled && !includeSoftDeleted
       ? { ...input, ...scope, [SOFT_DELETE_KEY]: { $exists: false } }
       : { ...input, ...scope };
   }
@@ -590,7 +415,7 @@ export function createSmartMongoRepo<
     keys: string[],
     operation: WriteOp | 'unset'
   ): void {
-    const readonlyKeys = keys.filter((key) => READONLY_KEYS.has(key));
+    const readonlyKeys = keys.filter((key) => config.isReadOnlyField(key));
 
     // For update and unset operations, also check scope keys are not being modified
     const scopeKeys =
@@ -649,7 +474,7 @@ export function createSmartMongoRepo<
 
     // no projection, return all fields except hidden meta-keys
     const filteredRest = Object.fromEntries(
-      Object.entries(rest).filter(([k]) => !HIDDEN_META_KEYS.has(k))
+      Object.entries(rest).filter(([k]) => !config.isHiddenField(k))
     );
     if (isDetachedIdentity) {
       // in detached mode, the entity already contains its business id field
@@ -667,7 +492,9 @@ export function createSmartMongoRepo<
 
     // Strip all system-managed fields to prevent external manipulation
     const strippedEntityData = Object.fromEntries(
-      Object.entries(cleanEntityData).filter(([key]) => !READONLY_KEYS.has(key))
+      Object.entries(cleanEntityData).filter(
+        ([key]) => !config.isReadOnlyField(key)
+      )
     );
 
     const filtered = deepFilterUndefined(strippedEntityData);
@@ -902,7 +729,7 @@ export function createSmartMongoRepo<
 
       for (const idChunk of chunks) {
         const filter = applyConstraints(idsFilter(idChunk));
-        if (softDeleteEnabled) {
+        if (config.softDeleteEnabled) {
           const updateOperation = applyTrace(
             'delete',
             applyVersion(
