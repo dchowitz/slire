@@ -51,6 +51,19 @@ type DateKeys<T> = {
     : never;
 }[keyof T];
 
+// utility type to extract keys of properties that are objects (not primitives, excluding Date)
+type ObjectKeys<T> = {
+  [K in keyof T]: T[K] extends object
+    ? T[K] extends Date
+      ? never
+      : K
+    : T[K] extends object | undefined
+    ? T[K] extends Date | undefined
+      ? never
+      : K
+    : never;
+}[keyof T];
+
 export type UpdateOperation<T> =
   | { set: Partial<T>; unset?: never }
   | { set?: never; unset: OptionalKeys<T>[] }
@@ -63,7 +76,7 @@ export type RepositoryConfig<T> = {
   timestampKeys?: TimestampConfig<T>;
   version?: true | NumberKeys<T>;
   identity?: 'synced' | 'detached';
-  traceKey?: string;
+  traceKey?: ObjectKeys<T>;
   traceStrategy?: 'latest' | 'bounded';
   traceLimit?: number;
 };
@@ -381,8 +394,8 @@ export function createSmartMongoRepo<
   }
 
   if (traceEnabled) {
-    READONLY_KEYS.add(traceKey);
-    configuredKeys.push(traceKey);
+    READONLY_KEYS.add(traceKey as string);
+    configuredKeys.push(traceKey as string);
   }
 
   // validate that all configured keys are unique to prevent undefined behavior
@@ -423,7 +436,7 @@ export function createSmartMongoRepo<
 
   // add trace field to hidden meta-keys if using default field
   if (traceEnabled && traceKey === DEFAULT_TRACE_KEY) {
-    HIDDEN_META_KEYS.add(traceKey);
+    HIDDEN_META_KEYS.add(traceKey as string);
   }
 
   // helper to centralize timestamp handling

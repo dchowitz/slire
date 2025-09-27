@@ -3026,6 +3026,9 @@ type TestEntity = {
     tags: string[];
     notes?: string;
   };
+  audit?: {
+    [key: string]: any;
+  };
 };
 
 function createTestEntity(overrides: Partial<TestEntity> = {}): TestEntity {
