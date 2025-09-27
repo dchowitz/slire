@@ -54,7 +54,10 @@ export type FirestoreRepo<
       update: UpdateOperation<UpdateInput>,
       mergeTrace?: any
     ) => Record<string, any>;
-    withTransaction<R>(
+    withTransaction(
+      transaction: Transaction
+    ): FirestoreRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>;
+    runTransaction<R>(
       operation: (
         txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>
       ) => Promise<R>
@@ -786,21 +789,26 @@ export function createSmartFirestoreRepo<
     // Applies enrichments (such as timestamps) and enforces constraints (writing readonly props not allowed)
     buildUpdateOperation: buildUpdateOperation,
 
+    // Factory method for transaction-aware repository
+    withTransaction: (tx: Transaction) => {
+      return createSmartFirestoreRepo({
+        collection,
+        firestore,
+        scope,
+        traceContext,
+        options: { ...options },
+        transaction: tx,
+      });
+    },
+
     // Convenience method for running multiple repo functions in a transaction
-    withTransaction: async <R>(
+    runTransaction: async <R>(
       operation: (
         txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>
       ) => Promise<R>
     ): Promise<R> => {
       return firestore.runTransaction(async (tx) => {
-        const txRepo = createSmartFirestoreRepo({
-          collection,
-          firestore,
-          scope,
-          traceContext,
-          options: { ...options },
-          transaction: tx,
-        });
+        const txRepo = repo.withTransaction(tx);
         return operation(
           txRepo as SmartRepo<
             T,
