@@ -46,10 +46,7 @@ export type FirestoreRepo<
 > = Prettify<
   SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> & {
     collection: CollectionReference<T>;
-    applyConstraints: (
-      query: Query<T>,
-      options?: { includeSoftDeleted?: boolean }
-    ) => Query<T>;
+    applyConstraints: (query: Query) => Query;
     buildUpdateOperation: (
       update: UpdateOperation<UpdateInput>,
       mergeTrace?: any
@@ -241,10 +238,7 @@ export function createSmartFirestoreRepo<
     return firestoreUpdate;
   }
 
-  function applyConstraints(
-    query: Query<T>,
-    options?: { includeSoftDeleted?: boolean }
-  ): Query<T> {
+  function applyConstraints(query: Query): Query {
     // Note: includeSoftDeleted option is kept for API compatibility but not used
     // since Firestore soft delete filtering is done client-side
     let constrainedQuery = query;
@@ -263,7 +257,7 @@ export function createSmartFirestoreRepo<
 
   // helper to map Firestore doc to entity
   function fromFirestoreDoc<P extends Projection<T>>(
-    doc: QueryDocumentSnapshot<T> | DocumentSnapshot<T>,
+    doc: QueryDocumentSnapshot | DocumentSnapshot,
     projection?: P
   ): Projected<T, P> | null {
     if (!doc.exists) {
@@ -391,7 +385,7 @@ export function createSmartFirestoreRepo<
       id: string,
       projection?: P
     ): Promise<Projected<T, P> | null> => {
-      let doc: DocumentSnapshot<T>;
+      let doc: DocumentSnapshot;
 
       if (isDetachedIdentity) {
         // In detached mode, we need to query by the id field
@@ -692,7 +686,7 @@ export function createSmartFirestoreRepo<
         return [];
       }
 
-      let query: Query<T> = collection;
+      let query: Query = collection;
 
       // Apply filter constraints
       for (const [key, value] of Object.entries(filter)) {
@@ -701,8 +695,37 @@ export function createSmartFirestoreRepo<
         }
       }
 
-      // Apply scope and soft delete constraints
+      // Apply scope constraints
       query = applyConstraints(query);
+
+      // Apply server-side projection for efficiency
+      if (projection) {
+        const projectionFields = Object.keys(projection);
+        const firestoreProjectionFields: string[] = [];
+
+        for (const field of projectionFields) {
+          if (field === 'id') {
+            // In detached mode, 'id' is a field in the document data
+            // In synced mode, 'id' comes from doc.id (document ID), so we don't need to select it
+            if (isDetachedIdentity) {
+              firestoreProjectionFields.push('id');
+            }
+          } else {
+            firestoreProjectionFields.push(field);
+          }
+        }
+
+        if (
+          config.softDeleteEnabled &&
+          !firestoreProjectionFields.includes(SOFT_DELETE_KEY)
+        ) {
+          firestoreProjectionFields.push(SOFT_DELETE_KEY);
+        }
+
+        if (firestoreProjectionFields.length > 0) {
+          query = query.select(...firestoreProjectionFields);
+        }
+      }
 
       const snapshot = await query.get();
       const results: Projected<T, P>[] = [];
@@ -739,7 +762,7 @@ export function createSmartFirestoreRepo<
         return 0;
       }
 
-      let query: Query<T> = collection;
+      let query: Query = collection;
 
       // Apply filter constraints
       for (const [key, value] of Object.entries(filter)) {
@@ -748,8 +771,17 @@ export function createSmartFirestoreRepo<
         }
       }
 
-      // Apply scope constraints (soft delete filtering done client-side)
+      // Apply scope constraints
       query = applyConstraints(query);
+
+      // Apply server-side projection for efficiency
+      if (config.softDeleteEnabled) {
+        // Only fetch soft-delete key for client-side filtering
+        query = query.select(SOFT_DELETE_KEY);
+      } else {
+        // No fields needed for count when soft delete is disabled - empty projection
+        query = query.select();
+      }
 
       const snapshot = await query.get();
 
