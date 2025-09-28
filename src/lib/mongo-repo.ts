@@ -598,13 +598,7 @@ export function createSmartMongoRepo<
       filter: Partial<T>,
       projection?: P
     ): Promise<Projected<T, P>[]> => {
-      if (
-        Object.entries(scope).some(
-          ([k, v]) =>
-            (filter as any)[k] !== undefined && v !== (filter as any)[k]
-        )
-      ) {
-        // result is empty for attempted scope breach
+      if (config.detectScopeBreach(filter)) {
         return [];
       }
 
@@ -633,6 +627,11 @@ export function createSmartMongoRepo<
     },
 
     count: async (filter: Partial<T>): Promise<number> => {
+      if (config.detectScopeBreach(filter)) {
+        // result is 0 for attempted scope breach
+        return 0;
+      }
+
       const mongoFilter = convertFilter(filter);
       return await collection.countDocuments(
         applyConstraints(mongoFilter),

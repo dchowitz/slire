@@ -425,7 +425,7 @@ export function createSmartFirestoreRepo<
       ) {
         return result;
       } else if (result && config.softDeleteEnabled) {
-        return null; // Document is soft deleted
+        return null; // Document is soft-deleted
       }
 
       return result;
@@ -603,7 +603,7 @@ export function createSmartFirestoreRepo<
                 !options?.includeSoftDeleted &&
                 docData[config.getSoftDeleteKey()]
               ) {
-                continue; // Skip soft deleted documents
+                continue; // Skip soft-deleted documents
               }
               transaction.update(docRef, updateOperation);
             }
@@ -625,7 +625,7 @@ export function createSmartFirestoreRepo<
                 !options?.includeSoftDeleted &&
                 docData[config.getSoftDeleteKey()]
               ) {
-                continue; // Skip soft deleted documents
+                continue; // Skip soft-deleted documents
               }
               batch.update(doc.ref, updateOperation);
             }
@@ -694,13 +694,7 @@ export function createSmartFirestoreRepo<
       filter: Partial<T>,
       projection?: P
     ): Promise<Projected<T, P>[]> => {
-      // Check for scope breach
-      if (
-        Object.entries(scope).some(
-          ([k, v]) =>
-            (filter as any)[k] !== undefined && v !== (filter as any)[k]
-        )
-      ) {
+      if (config.detectScopeBreach(filter)) {
         // result is empty for attempted scope breach
         return [];
       }
@@ -738,6 +732,11 @@ export function createSmartFirestoreRepo<
     },
 
     count: async (filter: Partial<T>): Promise<number> => {
+      if (config.detectScopeBreach(filter)) {
+        // result is 0 for attempted scope breach
+        return 0;
+      }
+
       let query: Query<T> = collection;
 
       // Apply filter constraints

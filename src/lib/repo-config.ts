@@ -353,5 +353,11 @@ export function repoConfig<T extends { id: string }>(
         }
       }
     },
+
+    detectScopeBreach: (filter: Partial<T>): boolean => {
+      return Object.entries(scopeObj).some(
+        ([k, v]) => (filter as any)[k] !== undefined && v !== (filter as any)[k]
+      );
+    },
   };
 }
