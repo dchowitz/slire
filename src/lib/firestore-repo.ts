@@ -244,8 +244,8 @@ export function createSmartFirestoreRepo<
     query: Query<T>,
     options?: { includeSoftDeleted?: boolean }
   ): Query<T> {
-    const includeSoftDeleted = options?.includeSoftDeleted ?? false;
-
+    // Note: includeSoftDeleted option is kept for API compatibility but not used
+    // since Firestore soft delete filtering is done client-side
     let constrainedQuery = query;
 
     // Apply scope constraints
@@ -253,15 +253,9 @@ export function createSmartFirestoreRepo<
       constrainedQuery = constrainedQuery.where(key, '==', value);
     }
 
-    // Apply soft delete constraint
-    if (config.softDeleteEnabled && !includeSoftDeleted) {
-      // In Firestore, we check that the soft delete field doesn't exist
-      constrainedQuery = constrainedQuery.where(
-        config.getSoftDeleteKey(),
-        '==',
-        null
-      );
-    }
+    // Note: Firestore has no "field-does-not-exist" operator like MongoDB's $exists: false
+    // So we can't filter soft-deleted documents server-side and must rely on client-side filtering
+    // The includeSoftDeleted option is passed through for client-side filtering
 
     return constrainedQuery;
   }
@@ -716,6 +710,14 @@ export function createSmartFirestoreRepo<
       for (const doc of snapshot.docs) {
         const result = fromFirestoreDoc(doc, projection);
         if (result) {
+          // Client-side soft delete filtering (since Firestore can't do server-side filtering)
+          if (config.softDeleteEnabled) {
+            const docData = doc.data();
+            const softDeleteKey = config.getSoftDeleteKey();
+            if (softDeleteKey in docData && (docData as any)[softDeleteKey]) {
+              continue; // Skip soft deleted document
+            }
+          }
           results.push(result);
         }
       }
@@ -744,11 +746,27 @@ export function createSmartFirestoreRepo<
         }
       }
 
-      // Apply scope and soft delete constraints
+      // Apply scope constraints (soft delete filtering done client-side)
       query = applyConstraints(query);
 
       const snapshot = await query.get();
-      return snapshot.size;
+
+      // Client-side soft delete filtering (since Firestore can't do server-side filtering)
+      if (!config.softDeleteEnabled) {
+        return snapshot.size;
+      }
+
+      let count = 0;
+      const softDeleteKey = config.getSoftDeleteKey();
+      for (const doc of snapshot.docs) {
+        const docData = doc.data();
+        // Only count documents that are not soft deleted
+        if (!(softDeleteKey in docData && (docData as any)[softDeleteKey])) {
+          count++;
+        }
+      }
+
+      return count;
     },
 
     countBySpec: async (spec: Specification<T>): Promise<number> => {
