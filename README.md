@@ -523,12 +523,13 @@ The `options` parameter configures consistency features and repository behavior:
 
 **`traceKey?: string`** - Customizes the field name used to store trace context in documents. Defaults to `_trace`. Use this to match your entity schema or avoid conflicts with existing fields. When using the default field name, it's automatically hidden from read results unless explicitly configured as an entity property.
 
-**`traceStrategy?: 'latest' | 'bounded'`** - Controls how trace information is stored. Defaults to `'latest'`.
+**`traceStrategy?: 'latest' | 'bounded' | 'unbounded'`** - Controls how trace information is stored. Defaults to `'latest'`.
 
 - **latest (default)**: Stores only the most recent trace context, overwriting previous traces with each operation
-- **bounded**: Maintains an array of recent traces, useful for tracking operation sequences on the same document
+- **bounded**: Maintains an array of recent traces with size limits, useful for tracking operation sequences on the same document
+- **unbounded**: Maintains an unlimited array of all traces, providing complete operation history (use with caution due to potential document size growth)
 
-**`traceLimit?: number`** - Maximum number of traces to retain when using `'bounded'` strategy. Required when `traceStrategy` is `'bounded'`. The repository automatically manages the array size, keeping only the most recent traces.
+**`traceLimit?: number`** - Maximum number of traces to retain when using `'bounded'` strategy. Required when `traceStrategy` is `'bounded'`. Not used with `'latest'` or `'unbounded'` strategies. The repository automatically manages the array size, keeping only the most recent traces.
 
 ```typescript
 // Latest strategy (default)
@@ -549,6 +550,17 @@ const auditRepo = createSmartMongoRepo({
     traceLimit: 5,
   },
   // Document: { ..., _trace: [{ userId: 'john', _op: 'create', _at: Date1 }, { userId: 'jane', _op: 'update', _at: Date2 }] }
+});
+
+// Unbounded strategy with complete history
+const fullHistoryRepo = createSmartMongoRepo({
+  collection,
+  mongoClient,
+  traceContext: { userId: 'john' },
+  options: {
+    traceStrategy: 'unbounded', // No traceLimit needed
+  },
+  // Document: { ..., _trace: [{ /* unlimited array of all operations */ }] }
 });
 ```
 
@@ -772,9 +784,9 @@ await repo.collection.updateMany(
 
 ### Audit Trail Strategies with Tracing
 
-SmartRepo's built-in tracing functionality is specifically designed for two primary audit strategies: **change stream processing** (using the "latest" trace strategy) and **embedded audit trails** (using the "bounded" trace strategy). The tracing feature automatically embeds trace context into documents during write operations, making it ideal for these approaches.
+SmartRepo's built-in tracing functionality is specifically designed for two primary audit strategies: **change stream processing** (using the "latest" trace strategy) and **embedded audit trails** (using either "bounded" or "unbounded" trace strategies). The tracing feature automatically embeds trace context into documents during write operations, making it ideal for these approaches.
 
-This section first covers these two SmartRepo-native strategies, followed by alternative approaches that implement audit logging without relying on SmartRepo's tracing feature - giving you flexibility to choose based on your specific requirements and infrastructure.
+This section first covers these SmartRepo-native strategies, followed by alternative approaches that implement audit logging without relying on SmartRepo's tracing feature - giving you flexibility to choose based on your specific requirements and infrastructure.
 
 #### Change Stream Processing (Recommended)
 
@@ -819,31 +831,42 @@ changeStream.on('change', async (event) => {
 
 #### Embedded Audit Trails
 
-**Approach:** Use SmartRepo's "bounded" trace strategy to maintain a limited history of changes directly within each document.
+**Approach:** Use SmartRepo's "bounded" or "unbounded" trace strategies to maintain operation history directly within each document.
 
 ```typescript
-// Repository configured for embedded audit trails
-const repo = createSmartMongoRepo({
+// Bounded strategy - limited history with size control
+const boundedRepo = createSmartMongoRepo({
   collection,
   mongoClient,
   traceContext: { userId, requestId, service: 'expense-api' },
   options: {
     traceStrategy: 'bounded',
     traceLimit: 100, // Keep last 100 operations per document
-    traceKey: '_auditTrail', // Custom field name for clarity
+    traceKey: '_history',
+  },
+});
+
+// Unbounded strategy - complete history without limits
+const unboundedRepo = createSmartMongoRepo({
+  collection,
+  mongoClient,
+  traceContext: { userId, requestId, service: 'expense-api' },
+  options: {
+    traceStrategy: 'unbounded', // No traceLimit needed
+    traceKey: '_history',
   },
 });
 
 // Normal operations automatically build audit history
-await repo.update(
+await unboundedRepo.update(
   expenseId,
   { set: { status: 'approved', approver: 'john.doe' } },
   { mergeTrace: { operation: 'approve-expense', reason: 'manual-review' } }
 );
 
-// Document now contains embedded audit trail
+// Document contains embedded audit trail
 const expense = await repo.getById(expenseId);
-console.log(expense._auditTrail);
+console.log(expense._history);
 // [
 //   {
 //     userId: 'john.doe',
@@ -854,7 +877,7 @@ console.log(expense._auditTrail);
 //     _op: 'update',
 //     _at: '2025-01-15T10:30:00Z'
 //   },
-//   // ... previous operations (up to traceLimit)
+//   // ... previous operations (up to traceLimit for bounded, unlimited for unbounded)
 // ]
 
 // Query documents by audit criteria using native MongoDB query
@@ -870,19 +893,30 @@ const recentApprovals = await repo.collection
   .toArray();
 ```
 
+**Database Support:**
+
+- **MongoDB**: Both strategies supported
+  - `bounded`: Uses `$push` with `$slice` for size limits
+  - `unbounded`: Uses `$push` without size limits
+- **Firestore**: `unbounded` only - `bounded` not supported due to lack of server-side array slicing
+  - `unbounded`: Uses `FieldValue.arrayUnion()`
+
 **Pros:**
 
 - Zero external infrastructure - audit history travels with the document
 - Immediate consistency - audit trail is always in sync with document state
 - Simple querying - can filter documents by audit criteria directly
 - No separate audit processing or storage concerns
+- Complete history available (unbounded strategy)
 
 **Cons:**
 
 - Document size growth - larger documents impact performance and storage
-- Limited history - bounded by `traceLimit` to prevent unbounded growth
+- Limited history (bounded strategy only) - bounded by `traceLimit`
+- Unbounded growth potential (unbounded strategy) - can lead to very large documents
 - No global audit view - audit trail is scattered across individual documents
 - Harder to implement complex audit analytics across multiple documents
+- MongoDB 16MB document size limits apply to unbounded strategy
 
 The following strategies implement audit logging without using SmartRepo's built-in tracing feature, offering different trade-offs for specific use cases:
 
