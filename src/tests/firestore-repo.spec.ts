@@ -904,6 +904,31 @@ describe('createSmartFirestoreRepo', function () {
       });
     });
   });
+
+  describe('updateMany', () => {
+    it('should update many entities and ignore non-existing ids', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+      const createdIds = await repo.createMany([
+        createTestEntity({ name: 'User 1' }),
+        createTestEntity({ name: 'User 2' }),
+        createTestEntity({ name: 'User 3' }),
+      ]);
+
+      // include a non-existent id; this should not throw
+      const nonExistentId = 'non-existent-id';
+      await repo.updateMany([...createdIds, nonExistentId], {
+        set: { isActive: false },
+      });
+
+      // verify all entities were updated
+      const [found] = await repo.getByIds(createdIds);
+      expect(found).toHaveLength(3);
+      expect(found.every((e) => e.isActive === false)).toBe(true);
+    });
+  });
 });
 
 // Test Entity type and helper function (same as MongoDB tests)
