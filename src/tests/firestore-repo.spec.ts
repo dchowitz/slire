@@ -5,7 +5,11 @@ import {
   createSmartFirestoreRepo,
   convertFirestoreTimestamps,
 } from '../lib/firestore-repo';
-import { CreateManyPartialFailure } from '../lib/smart-repo';
+import {
+  combineSpecs,
+  CreateManyPartialFailure,
+  Specification,
+} from '../lib/smart-repo';
 import {
   clearFirestoreCollection,
   firestore,
@@ -1156,6 +1160,107 @@ describe('createSmartFirestoreRepo', function () {
 
       const count = await repo.count({ name: 'Non-existent' });
       expect(count).toBe(0);
+    });
+  });
+
+  describe('findBySpec, countBySpec', () => {
+    it('should support findBySpec and countBySpec with basic specifications', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'Alice', age: 25, isActive: true }),
+        createTestEntity({ name: 'Bob', age: 30, isActive: true }),
+        createTestEntity({ name: 'Charlie', age: 35, isActive: false }),
+      ]);
+
+      const activeUsersSpec: Specification<TestEntity> = {
+        toFilter: () => ({ isActive: true }),
+        describe: 'active users',
+      };
+
+      const specificAgeSpec: Specification<TestEntity> = {
+        toFilter: () => ({ age: 25 }),
+        describe: 'users aged 25',
+      };
+
+      const activeUsers = await repo.findBySpec(activeUsersSpec);
+      expect(activeUsers).toHaveLength(2);
+      activeUsers.forEach((user) => expect(user.isActive).toBe(true));
+
+      const youngUsers = await repo.findBySpec(specificAgeSpec);
+      expect(youngUsers).toHaveLength(1);
+      expect(youngUsers[0].name).toBe('Alice');
+
+      const activeCount = await repo.countBySpec(activeUsersSpec);
+      expect(activeCount).toBe(2);
+
+      const youngCount = await repo.countBySpec(specificAgeSpec);
+      expect(youngCount).toBe(1);
+    });
+
+    it('should support findBySpec with projections', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      const entity = createTestEntity({
+        name: 'Test User',
+        age: 30,
+        isActive: true,
+      });
+      await repo.create(entity);
+
+      const spec: Specification<TestEntity> = {
+        toFilter: () => ({ isActive: true }),
+        describe: 'active users',
+      };
+
+      const results = await repo.findBySpec(spec, { id: true, name: true });
+      expect(results).toHaveLength(1);
+      expect(results[0]).toHaveProperty('id');
+      expect(results[0]).toHaveProperty('name');
+      expect(results[0]).not.toHaveProperty('age');
+      expect(results[0]).not.toHaveProperty('isActive');
+    });
+
+    it('should support specification composition with combineSpecs', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'Alice', age: 25, isActive: true }),
+        createTestEntity({ name: 'Bob', age: 30, isActive: true }),
+        createTestEntity({ name: 'Charlie', age: 25, isActive: false }),
+      ]);
+
+      const activeSpec: Specification<TestEntity> = {
+        toFilter: () => ({ isActive: true }),
+        describe: 'active users',
+      };
+
+      const youngSpec: Specification<TestEntity> = {
+        toFilter: () => ({ age: 25 }),
+        describe: 'users aged 25',
+      };
+
+      const combinedSpec = combineSpecs(activeSpec, youngSpec);
+
+      const results = await repo.findBySpec(combinedSpec);
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe('Alice');
+      expect(results[0].isActive).toBe(true);
+      expect(results[0].age).toBe(25);
+
+      expect(combinedSpec.describe).toBe('active users AND users aged 25');
+
+      const count = await repo.countBySpec(combinedSpec);
+      expect(count).toBe(1);
     });
   });
 });
