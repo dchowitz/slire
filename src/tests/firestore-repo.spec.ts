@@ -128,13 +128,14 @@ describe('createSmartFirestoreRepo', function () {
     });
 
     it('should strip system-managed fields from input entities during create', async () => {
+      const fixedTimestamp = new Date('2024-01-01T12:00:00.000Z');
       const repo = createSmartFirestoreRepo({
         collection: testCollection(),
         firestore: firestore.firestore,
         options: {
           softDelete: true,
           version: true,
-          traceTimestamps: true,
+          traceTimestamps: () => fixedTimestamp,
         },
         traceContext: { userId: 'test-user' },
       });
@@ -154,13 +155,23 @@ describe('createSmartFirestoreRepo', function () {
       const rawDoc = await rawTestCollection().doc(createdId).get();
       const rawData = rawDoc.data();
 
-      // Managed fields should not be present (stripped during create)
-      expect(rawData).not.toHaveProperty('_id');
-      expect(rawData).not.toHaveProperty('_version');
-      expect(rawData).not.toHaveProperty('_createdAt');
-      expect(rawData).not.toHaveProperty('_updatedAt');
+      // Input managed field values should be stripped and replaced with system-managed values
+      expect(rawData).not.toHaveProperty('_id'); // _id should never be stored in Firestore documents
+
+      // System should set proper managed field values (not the input values)
+      expect(rawData).toMatchObject({
+        _version: 1, // System sets version to 1 (not 42 from input)
+        _createdAt: fixedTimestamp,
+        _updatedAt: fixedTimestamp,
+        _trace: {
+          userId: 'test-user', // User context preserved
+          _op: 'create',
+          _at: fixedTimestamp,
+        },
+      });
+
+      // _deleted should not be present for a create operation
       expect(rawData).not.toHaveProperty('_deleted');
-      expect(rawData).not.toHaveProperty('_trace');
 
       // Business fields should be present
       expect(rawData).toMatchObject({
@@ -171,6 +182,7 @@ describe('createSmartFirestoreRepo', function () {
     });
 
     it('should strip system-managed fields with custom timestamp keys during create', async () => {
+      const fixedTimestamp = new Date('2024-02-15T10:30:00.000Z');
       const repo = createSmartFirestoreRepo({
         collection: firestore.firestore.collection(
           COLLECTION_NAME
@@ -181,7 +193,7 @@ describe('createSmartFirestoreRepo', function () {
             createdAt: 'createdAt',
             updatedAt: 'updatedAt',
           },
-          traceTimestamps: true,
+          traceTimestamps: () => fixedTimestamp,
         },
       });
 
@@ -198,21 +210,205 @@ describe('createSmartFirestoreRepo', function () {
       const rawData = rawDoc.data();
 
       // Custom timestamp fields should not be present from input (stripped and auto-managed)
-      // But they will be set by the system with current timestamp
-      expect(rawData).toHaveProperty('createdAt');
-      expect(rawData).toHaveProperty('updatedAt');
+      // They should be set by the system with the fixed timestamp (not input values)
+      expect(rawData).toMatchObject({
+        createdAt: fixedTimestamp,
+        updatedAt: fixedTimestamp,
+      });
+    });
+  });
 
-      // The values should not be the ones from input (2023-01-01, 2023-01-02)
-      // They should be recent timestamps set by the system
-      const createdAt =
-        (rawData as any).createdAt?.toDate?.() || rawData?.createdAt;
-      const updatedAt =
-        (rawData as any).updatedAt?.toDate?.() || rawData?.updatedAt;
+  describe('createMany', () => {
+    it('should create multiple entities and return their ids', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+      const entities = [
+        createTestEntity({ name: 'Alice', email: 'alice@example.com' }),
+        createTestEntity({ name: 'Bob', email: 'bob@example.com' }),
+        createTestEntity({ name: 'Charlie', email: 'charlie@example.com' }),
+      ];
 
-      expect(createdAt).toBeInstanceOf(Date);
-      expect(updatedAt).toBeInstanceOf(Date);
-      expect(createdAt.getFullYear()).toBe(new Date().getFullYear()); // Should be current year
-      expect(updatedAt.getFullYear()).toBe(new Date().getFullYear()); // Should be current year
+      const createdIds = await repo.createMany(entities);
+
+      expect(Array.isArray(createdIds)).toBe(true);
+      expect(createdIds).toHaveLength(3);
+      for (const id of createdIds) {
+        expect(typeof id).toBe('string');
+        expect(id.length).toBeGreaterThan(0);
+      }
+
+      // verify all entities were created
+      const [found, notFound] = await repo.getByIds(createdIds);
+      expect(found).toHaveLength(3);
+      expect(notFound).toHaveLength(0);
+
+      // verify entity data
+      const expectedNames = ['Alice', 'Bob', 'Charlie'];
+      const expectedEmails = [
+        'alice@example.com',
+        'bob@example.com',
+        'charlie@example.com',
+      ];
+      const foundNames = found.map((entity) => entity.name);
+      const foundEmails = found.map((entity) => entity.email);
+
+      expect(foundNames).toEqual(expect.arrayContaining(expectedNames));
+      expect(foundEmails).toEqual(expect.arrayContaining(expectedEmails));
+    });
+
+    it('should generate unique ids for all entities', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+      const entities = [
+        createTestEntity({ name: 'Entity 1' }),
+        createTestEntity({ name: 'Entity 2' }),
+        createTestEntity({ name: 'Entity 3' }),
+      ];
+
+      const createdIds = await repo.createMany(entities);
+
+      // all ids should be unique
+      const uniqueIds = new Set(createdIds);
+      expect(uniqueIds.size).toEqual(createdIds.length);
+      expect(uniqueIds.size).toEqual(3);
+    });
+
+    it('should handle empty array', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+      const createdIds = await repo.createMany([]);
+
+      expect(Array.isArray(createdIds)).toBe(true);
+      expect(createdIds).toHaveLength(0);
+    });
+
+    it('should handle entities with optional fields', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+      const entities = [
+        createTestEntity({
+          name: 'User 1',
+          metadata: undefined,
+        }),
+        createTestEntity({
+          name: 'User 2',
+          metadata: { tags: ['custom'], notes: 'Custom notes' },
+        }),
+      ];
+
+      const createdIds = await repo.createMany(entities);
+
+      const [found, notFound] = await repo.getByIds(createdIds);
+      expect(found).toHaveLength(2);
+      expect(notFound).toHaveLength(0);
+
+      // verify first entity (without optional fields)
+      const firstEntity = found.find((e) => e.name === 'User 1');
+      expect(firstEntity).toEqual({
+        id: createdIds[0],
+        tenantId: firstEntity!.tenantId,
+        name: 'User 1',
+        email: 'test@example.com',
+        age: 30,
+        isActive: true,
+      });
+
+      // verify second entity (with optional fields)
+      const secondEntity = found.find((e) => e.name === 'User 2');
+      expect(secondEntity).toEqual({
+        id: createdIds[1],
+        tenantId: secondEntity!.tenantId,
+        name: 'User 2',
+        email: 'test@example.com',
+        age: 30,
+        isActive: true,
+        metadata: { tags: ['custom'], notes: 'Custom notes' },
+      });
+    });
+
+    it('should recursively filter undefined properties', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+      const entities = [
+        {
+          ...createTestEntity(),
+          metadata: {
+            tags: ['tag1', undefined, 'tag2'] as any,
+            notes: undefined,
+            nested: {
+              value: 'keep',
+              remove: undefined,
+            },
+          },
+        },
+      ];
+
+      const createdIds = await repo.createMany(entities);
+
+      // Check raw document in Firestore
+      const rawDoc = await rawTestCollection().doc(createdIds[0]).get();
+      const rawData = rawDoc.data();
+
+      // Undefined should be filtered out (including from arrays in Firestore)
+      expect(rawData?.metadata).toEqual({
+        tags: ['tag1', 'tag2'], // undefined filtered from array
+        nested: {
+          value: 'keep',
+          // remove: undefined should be absent
+        },
+        // notes: undefined should be absent
+      });
+      expect(rawData?.metadata).not.toHaveProperty('notes');
+      expect(rawData?.metadata.nested).not.toHaveProperty('remove');
+    });
+
+    it('should handle large batches with chunking', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      // Create 1500 entities to test chunking (Firestore batch limit is 500)
+      const entities: TestEntity[] = [];
+      for (let i = 0; i < 1500; i++) {
+        entities.push(
+          createTestEntity({
+            name: `User ${i}`,
+            email: `user${i}@example.com`,
+            age: 20 + i,
+          })
+        );
+      }
+
+      const createdIds = await repo.createMany(entities);
+
+      expect(createdIds).toHaveLength(1500);
+
+      // verify all entities were created
+      const [found, notFound] = await repo.getByIds(createdIds);
+      expect(found).toHaveLength(1500);
+      expect(notFound).toHaveLength(0);
+
+      // verify data for a sample of entities
+      const sampleIndices = [0, 500, 1000, 1499];
+      for (const i of sampleIndices) {
+        const entity = found.find((e) => e.id === createdIds[i]);
+        expect(entity).toMatchObject({
+          name: `User ${i}`,
+          email: `user${i}@example.com`,
+          age: 20 + i,
+        });
+      }
     });
   });
 });
