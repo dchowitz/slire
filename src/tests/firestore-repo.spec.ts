@@ -168,12 +168,12 @@ describe('createSmartFirestoreRepo', function () {
         _updatedAt: fixedTimestamp,
       });
 
-      // Check trace structure (trace timestamp is dynamic, so we check separately)
+      // Check trace structure (now uses configured timestamp strategy)
       expect(convertedData._trace).toMatchObject({
         userId: 'test-user', // User context preserved
         _op: 'create', // System adds operation type
+        _at: fixedTimestamp, // Now respects configured timestamp strategy
       });
-      expect(convertedData._trace._at).toBeInstanceOf(Date); // Dynamic timestamp, just check it's a Date
 
       // _deleted should not be present for a create operation
       expect(convertedData).not.toHaveProperty('_deleted');

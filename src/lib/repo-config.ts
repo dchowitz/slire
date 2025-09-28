@@ -219,10 +219,22 @@ export function repoConfig<T extends { id: string }>(
 
       if (!context) return undefined;
 
+      // Use configured timestamp strategy or fallback to new Date()
+      let timestamp: Date;
+      if (!effectiveTraceTimestamps) {
+        timestamp = new Date();
+      } else if (effectiveTraceTimestamps === true) {
+        timestamp = new Date();
+      } else if (typeof effectiveTraceTimestamps === 'function') {
+        timestamp = effectiveTraceTimestamps();
+      } else {
+        timestamp = new Date();
+      }
+
       return {
         ...context,
         _op: op,
-        _at: new Date(),
+        _at: timestamp,
       };
     },
 
