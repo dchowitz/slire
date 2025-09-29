@@ -40,7 +40,11 @@ class FirestoreFixture {
   public async teardown() {
     if (this.firestoreInstance) {
       try {
+        // Properly close all connections
         await this.firestoreInstance.terminate();
+
+        // Give it a moment to fully close
+        await new Promise((resolve) => setTimeout(resolve, 100));
       } catch (error) {
         console.warn(
           'Firestore teardown failed:',
