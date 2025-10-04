@@ -1,5 +1,5 @@
 import { omit, range, sortBy } from 'lodash-es';
-import { Collection } from 'mongodb';
+import { Collection, ObjectId } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import { createSmartMongoRepo } from '../lib/mongo-repo';
 import {
@@ -1544,82 +1544,90 @@ describe('createSmartMongoRepo', function () {
     });
   });
 
-  describe('detached identity', () => {
-    it('create stores separate internal key and business id', async () => {
+  describe('identity', () => {
+    it('uses server-generated ids by default and does not mirror by default', async () => {
       const repo = createSmartMongoRepo<TestEntity>({
         collection: testCollection(),
         mongoClient: mongo.client,
-        options: { identity: 'detached' },
+        options: { generateId: 'server' },
       });
 
-      // client-supplied id is ignored on create
-      const suppliedId = 'client-supplied-id';
-      const createdId = await repo.create(
-        createTestEntity({ name: 'Detached A', id: suppliedId } as any)
-      );
-      expect(createdId).not.toBe(suppliedId);
-
-      const raw = await rawTestCollection().findOne({ id: createdId });
+      const id = await repo.create(createTestEntity({ name: 'A' }));
+      const raw = await rawTestCollection().findOne({
+        _id: new ObjectId(id),
+      });
       expect(raw).toBeTruthy();
-      expect(typeof raw!._id).toBe('string');
-      expect(typeof raw!.id).toBe('string');
-      expect(raw!._id).not.toBe(raw!.id);
+      expect(raw).not.toHaveProperty('id');
 
-      const roundTripped = await repo.getById(createdId);
-      expect(roundTripped?.id).toBe(createdId);
-      expect(roundTripped?.name).toBe('Detached A');
+      const got = await repo.getById(id);
+      expect(got?.id).toBe(id);
     });
 
-    it('CRUD by business id', async () => {
+    it('mirrors id into document when mirrorId=true', async () => {
       const repo = createSmartMongoRepo<TestEntity>({
         collection: testCollection(),
         mongoClient: mongo.client,
-        options: { identity: 'detached' },
+        options: { generateId: 'server', mirrorId: true },
       });
 
-      const [aId, bId] = await repo.createMany([
-        createTestEntity({ name: 'A' }),
-        createTestEntity({ name: 'B' }),
-      ]);
-
-      // update by business id
-      await repo.update(aId, { set: { name: 'A-updated' } });
-      const afterUpdate = await repo.getById(aId);
-      expect(afterUpdate?.name).toBe('A-updated');
-
-      // find/count by business id
-      const found = await repo.find({ id: bId });
-      expect(found).toHaveLength(1);
-      expect(found[0].name).toBe('B');
-      expect(await repo.count({ id: bId })).toBe(1);
-
-      // delete by business id
-      await repo.delete(bId);
-      expect(await repo.getById(bId)).toBeNull();
+      const id = await repo.create(createTestEntity({ name: 'B' }));
+      const raw = await rawTestCollection().findOne({
+        _id: new ObjectId(id),
+      });
+      expect(raw).toHaveProperty('id', id);
     });
 
-    it('update preserves internal key', async () => {
+    it('supports custom generateId function', async () => {
       const repo = createSmartMongoRepo<TestEntity>({
         collection: testCollection(),
         mongoClient: mongo.client,
-        options: { identity: 'detached' },
+        options: { generateId: () => 'custom-xyz' },
       });
 
-      const id = await repo.create(createTestEntity({ name: 'X' }));
-      const before = await rawTestCollection().findOne({ id });
-      const internalBefore = before!._id;
+      const id = await repo.create(createTestEntity({ name: 'C' }));
+      expect(id).toBe('custom-xyz');
+      const raw = await rawTestCollection().findOne({ _id: 'custom-xyz' });
+      expect(raw).toBeTruthy();
+    });
 
-      await repo.update(id, { set: { name: 'X2' } });
-
-      const after = await rawTestCollection().findOne({ id });
-      expect(after!.name).toBe('X2');
-      expect(after!._id).toBe(internalBefore);
-
-      // projection should include id when requested
-      expect(await repo.getById(id, { id: true, name: true })).toEqual({
-        id,
-        name: 'X2',
+    it('supports custom idKey without mirroring', async () => {
+      type EntityWithAlias = TestEntity & { entityId: string };
+      const repo = createSmartMongoRepo<EntityWithAlias>({
+        collection: mongo.client
+          .db()
+          .collection(
+            COLLECTION_NAME
+          ) as unknown as Collection<EntityWithAlias>,
+        mongoClient: mongo.client,
+        options: { idKey: 'entityId', generateId: 'server' },
       });
+
+      const id = await repo.create({
+        ...(createTestEntity({ name: 'D' }) as any),
+      });
+      const got = await repo.getById(id);
+      expect(got).toHaveProperty('entityId', id);
+
+      const found = await repo.find({ entityId: id } as any);
+      expect(found.map((e) => (e as any).entityId)).toEqual([id]);
+
+      const proj = await repo.getById(id, {
+        entityId: true,
+        name: true,
+      } as any);
+      expect(proj).toEqual({ entityId: id, name: 'D' } as any);
+    });
+
+    it('treats idKey as readonly on update', async () => {
+      const repo = createSmartMongoRepo<TestEntity>({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        options: { generateId: 'server' },
+      });
+      const id = await repo.create(createTestEntity({ name: 'E' }));
+      await expect(
+        repo.update(id, { set: { id: 'hacked' } } as any)
+      ).rejects.toThrow('Cannot update readonly properties');
     });
   });
 

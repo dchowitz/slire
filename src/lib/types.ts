@@ -36,3 +36,13 @@ export type ObjectKeys<T> = {
     : never;
 }[keyof T] &
   string;
+
+// utility type to extract keys of properties that are strings
+export type StringKeys<T> = {
+  [K in keyof T]: T[K] extends string
+    ? K
+    : T[K] extends string | undefined
+    ? K
+    : never;
+}[keyof T] &
+  string;

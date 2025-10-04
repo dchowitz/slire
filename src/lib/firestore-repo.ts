@@ -2,6 +2,7 @@ import {
   CollectionReference,
   DocumentReference,
   DocumentSnapshot,
+  FieldPath,
   FieldValue,
   Firestore,
   Query,
@@ -10,7 +11,6 @@ import {
   Transaction,
 } from '@google-cloud/firestore';
 import { chunk } from 'lodash-es';
-import { v4 as uuidv4 } from 'uuid';
 import {
   ManagedFields,
   Projected,
@@ -132,9 +132,12 @@ export function createSmartFirestoreRepo<
     );
   }
 
-  const generateIdFn = options?.generateId ?? uuidv4;
-  const identityMode = options?.identity ?? 'synced';
-  const isDetachedIdentity = identityMode === 'detached';
+  const idKey = config.idKey;
+  const mirrorId = config.mirrorId;
+  const generateIdFn: () => string =
+    config.idStrategy === 'server'
+      ? () => collection.doc().id
+      : (config.idStrategy as () => string);
 
   const getDocRef = (id: string): DocumentReference<T> => collection.doc(id);
 
@@ -292,14 +295,14 @@ export function createSmartFirestoreRepo<
       const projectedFields = Object.keys(projection);
       const result: any = {};
 
-      // always include id if it's in the projection
-      if (projectedFields.includes('id')) {
-        result.id = isDetachedIdentity ? docData.id : docId;
+      // include idKey if requested (computed from docId)
+      if (projectedFields.includes(idKey)) {
+        result[idKey] = docId;
       }
 
-      // include other projected fields
+      // include other projected fields from stored data
       for (const field of projectedFields) {
-        if (field !== 'id' && field in docData) {
+        if (field !== idKey && field in docData) {
           result[field] = (docData as any)[field];
         }
       }
@@ -312,11 +315,7 @@ export function createSmartFirestoreRepo<
       Object.entries(docData).filter(([k]) => !config.isHiddenField(k))
     );
 
-    if (isDetachedIdentity) {
-      // in detached mode, the entity already contains its business id field
-      return { ...filteredData } as Projected<T, P>;
-    }
-    return { id: docId, ...filteredData } as Projected<T, P>;
+    return { [idKey]: docId, ...filteredData } as Projected<T, P> as any;
   }
 
   // helper to map entity to Firestore doc data, omitting all undefined properties and system fields
@@ -324,7 +323,7 @@ export function createSmartFirestoreRepo<
     entity: CreateInput,
     op: 'create'
   ): { docId: string; docData: any } {
-    const { id, ...entityData } = entity;
+    const { [idKey]: _ignoredId, ...entityData } = entity as any;
     config.validateScopeProperties(entityData, op);
 
     // Strip all system-managed fields to prevent external manipulation
@@ -335,22 +334,15 @@ export function createSmartFirestoreRepo<
     const filtered = deepFilterUndefined(strippedEntityData);
 
     // identity handling
-    if (isDetachedIdentity) {
-      // business id and internal id are different
-      const businessId = generateIdFn();
-      const internalId = generateIdFn();
-      return {
-        docId: internalId,
-        docData: { ...filtered, ...scope, id: businessId },
-      };
-    } else {
-      // synced: use single id for both
-      const syncId = generateIdFn();
-      return {
-        docId: syncId,
-        docData: { ...filtered, ...scope },
-      };
-    }
+    const docId = generateIdFn();
+    return {
+      docId,
+      docData: {
+        ...filtered,
+        ...scope,
+        ...(mirrorId ? { [idKey]: docId } : {}),
+      },
+    };
   }
 
   // helper to build Firestore update operation from set/unset
@@ -405,29 +397,16 @@ export function createSmartFirestoreRepo<
       id: string,
       projection?: P
     ): Promise<Projected<T, P> | null> => {
-      let doc: DocumentSnapshot;
-
-      if (isDetachedIdentity) {
-        // In detached mode, we need to query by the id field
-        const query = applyConstraints(collection.where('id', '==', id));
-        const snapshot = transaction
-          ? await transaction.get(query)
-          : await query.get();
-
-        if (snapshot.empty) {
-          return null;
-        }
-        doc = snapshot.docs[0];
-      } else {
-        // In synced mode, the id is the document ID
-        const docRef = getDocRef(id);
-        doc = transaction ? await transaction.get(docRef) : await docRef.get();
-      }
+      // Lookup by document id
+      const docRef = getDocRef(id);
+      const doc: DocumentSnapshot = transaction
+        ? await transaction.get(docRef)
+        : await docRef.get();
 
       const result = fromFirestoreDoc(doc, projection);
 
       // Apply client-side scope filtering (for synced mode where we bypass applyConstraints)
-      if (result && config.scopeBreach(result)) {
+      if (result && config.scopeBreach(result as any)) {
         return null; // Document doesn't match scope
       }
 
@@ -456,44 +435,21 @@ export function createSmartFirestoreRepo<
       const foundDocs: Projected<T, P>[] = [];
       const foundIds = new Set<string>();
 
-      if (isDetachedIdentity) {
-        // In detached mode, query by the id field (batch queries due to Firestore 'in' limit of 10)
-        const batches = chunk(ids, 10); // Firestore 'in' operator limit (newer SDK versions allow 30)
+      // Get documents by their document IDs
+      const docRefs = ids.map((id) => getDocRef(id));
+      const docs = transaction
+        ? await Promise.all(docRefs.map((ref) => transaction.get(ref)))
+        : await firestore.getAll(...docRefs);
 
-        for (const batch of batches) {
-          const query = applyConstraints(collection.where('id', 'in', batch));
-          const snapshot = transaction
-            ? await transaction.get(query)
-            : await query.get();
-
-          for (const doc of snapshot.docs) {
-            const result = fromFirestoreDoc(doc, projection);
-            if (result) {
-              foundDocs.push(result);
-              foundIds.add((result as any).id);
-            }
-          }
-        }
-      } else {
-        // In synced mode, get documents by their document IDs
-        const docRefs = ids.map((id) => getDocRef(id));
-        const docs = transaction
-          ? await Promise.all(docRefs.map((ref) => transaction.get(ref)))
-          : await firestore.getAll(...docRefs);
-
-        for (const [index, doc] of docs.entries()) {
-          const result = fromFirestoreDoc(
-            doc as DocumentSnapshot<T>,
-            projection
-          );
-          if (
-            result &&
-            !config.scopeBreach(result) &&
-            (!config.softDeleteEnabled || !(result as any)[SOFT_DELETE_KEY])
-          ) {
-            foundDocs.push(result);
-            foundIds.add(ids[index]);
-          }
+      for (const [index, doc] of docs.entries()) {
+        const result = fromFirestoreDoc(doc as DocumentSnapshot<T>, projection);
+        if (
+          result &&
+          !config.scopeBreach(result as any) &&
+          (!config.softDeleteEnabled || !(result as any)[SOFT_DELETE_KEY])
+        ) {
+          foundDocs.push(result);
+          foundIds.add(ids[index]);
         }
       }
 
@@ -519,9 +475,7 @@ export function createSmartFirestoreRepo<
 
       // prepare all docs upfront so we have stable ids for reporting
       const preparedDocs = entities.map((e) => toFirestoreDoc(e, 'create'));
-      const preparedPublicIds = preparedDocs.map((doc) =>
-        isDetachedIdentity ? (doc.docData as any).id : doc.docId
-      );
+      const preparedPublicIds = preparedDocs.map((doc) => doc.docId);
 
       const insertedSoFar: string[] = [];
 
@@ -715,10 +669,13 @@ export function createSmartFirestoreRepo<
 
       let query: Query = collection;
 
-      // Apply filter constraints
+      // Apply filter constraints (map idKey to documentId)
       for (const [key, value] of Object.entries(filter)) {
-        if (value !== undefined) {
-          query = query.where(key, '==', value);
+        if (value === undefined) continue;
+        if (key === idKey) {
+          query = query.where(FieldPath.documentId(), '==', value as any);
+        } else {
+          query = query.where(key, '==', value as any);
         }
       }
 
@@ -731,13 +688,7 @@ export function createSmartFirestoreRepo<
         const firestoreProjectionFields: string[] = [];
 
         for (const field of projectionFields) {
-          if (field === 'id') {
-            // In detached mode, 'id' is a field in the document data
-            // In synced mode, 'id' comes from doc.id (document ID), so we don't need to select it
-            if (isDetachedIdentity) {
-              firestoreProjectionFields.push('id');
-            }
-          } else {
+          if (field !== idKey) {
             firestoreProjectionFields.push(field);
           }
         }
@@ -791,10 +742,13 @@ export function createSmartFirestoreRepo<
 
       let query: Query = collection;
 
-      // Apply filter constraints
+      // Apply filter constraints (map idKey to documentId)
       for (const [key, value] of Object.entries(filter)) {
-        if (value !== undefined) {
-          query = query.where(key, '==', value);
+        if (value === undefined) continue;
+        if (key === idKey) {
+          query = query.where(FieldPath.documentId(), '==', value as any);
+        } else {
+          query = query.where(key, '==', value as any);
         }
       }
 

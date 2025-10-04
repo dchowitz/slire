@@ -1500,6 +1500,90 @@ describe('createSmartFirestoreRepo', function () {
       });
     });
   });
+
+  describe('identity', () => {
+    it('uses server-generated ids by default and does not mirror by default', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      const createdId = await repo.create(createTestEntity({ name: 'A' }));
+      expect(typeof createdId).toBe('string');
+
+      // raw doc exists and does not persist id field when mirrorId=false
+      const raw = await rawTestCollection().doc(createdId).get();
+      const data = raw.data();
+      expect(data).toBeTruthy();
+      expect(data).not.toHaveProperty('id');
+
+      // entity exposes idKey ('id' by default)
+      const got = await repo.getById(createdId);
+      expect(got).toMatchObject({ id: createdId, name: 'A' });
+    });
+
+    it('mirrors id into document when mirrorId=true', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { mirrorId: true },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'B' }));
+      const raw = await rawTestCollection().doc(id).get();
+      expect(raw.data()).toHaveProperty('id', id);
+    });
+
+    it('supports custom generateId function', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { generateId: () => 'custom-abc' },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'C' }));
+      expect(id).toBe('custom-abc');
+      const got = await repo.getById(id);
+      expect(got?.id).toBe('custom-abc');
+    });
+
+    it('supports custom idKey without mirroring', async () => {
+      type EntityWithAlias = TestEntity & { entityId: string };
+      const repo = createSmartFirestoreRepo<EntityWithAlias>({
+        collection: firestore.firestore.collection(
+          COLLECTION_NAME
+        ) as CollectionReference<EntityWithAlias>,
+        firestore: firestore.firestore,
+        options: { idKey: 'entityId' },
+      });
+
+      const id = await repo.create({
+        ...(createTestEntity({ name: 'D' }) as any),
+      });
+
+      const got = await repo.getById(id);
+      expect(got).toHaveProperty('entityId', id);
+
+      // filter by idKey should map to document id
+      const found = await repo.find({ entityId: id });
+      expect(found.map((e) => e.entityId)).toEqual([id]);
+
+      // projection should include computed idKey
+      const proj = await repo.getById(id, { entityId: true, name: true });
+      expect(proj).toEqual({ entityId: id, name: 'D' });
+    });
+
+    it('treats idKey as readonly on update', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+      const id = await repo.create(createTestEntity({ name: 'E' }));
+      await expect(
+        repo.update(id, { set: { id: 'hacked' } } as any)
+      ).rejects.toThrow('Cannot update readonly properties');
+    });
+  });
 });
 
 // Test Entity type and helper function (same as MongoDB tests)

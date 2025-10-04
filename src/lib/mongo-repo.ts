@@ -1,6 +1,5 @@
 import { chunk } from 'lodash-es';
-import { ClientSession, Collection, MongoClient } from 'mongodb';
-import { v4 as uuidv4 } from 'uuid';
+import { ClientSession, Collection, MongoClient, ObjectId } from 'mongodb';
 import {
   ManagedFields,
   Projected,
@@ -113,30 +112,32 @@ export function createSmartMongoRepo<
 }): MongoRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> {
   const config = repoConfig(options ?? ({} as Config), traceContext, scope);
 
-  const generateIdFn = options?.generateId ?? uuidv4;
-  const identityMode = options?.identity ?? 'synced';
-  const isDetachedIdentity = identityMode === 'detached';
+  // Identity configuration
+  const idKey = config.idKey;
+  const mirrorId = config.mirrorId;
+  const useServerIds = config.idStrategy === 'server';
+  const generateDocId = (): any =>
+    useServerIds ? new ObjectId() : (config.idStrategy as () => string)();
+  const toMongoId = (id: string): any => (useServerIds ? new ObjectId(id) : id);
+  const fromMongoId = (id: any): string =>
+    useServerIds ? (id as ObjectId).toHexString() : (id as string);
 
   // centralized id handling helpers
-  const DATASTORE_ID_KEY = isDetachedIdentity ? 'id' : '_id';
-  const idFilter = (id: string): any => ({ [DATASTORE_ID_KEY]: id } as any);
+  const idFilter = (id: string): any => ({ _id: toMongoId(id) } as any);
   const idsFilter = (ids: string[]): any =>
-    ({ [DATASTORE_ID_KEY]: { $in: ids } } as any);
+    ({ _id: { $in: ids.map(toMongoId) } } as any);
   const getPublicIdFromDoc = (doc: any): string =>
-    isDetachedIdentity
-      ? ((doc as any).id as string)
-      : (doc._id as unknown as string); // in synced mode, _id is the public id and always a string
+    fromMongoId((doc as any)._id);
   const convertFilter = (filter: Partial<T>): any => {
-    if (isDetachedIdentity) {
-      return filter as any;
+    const f: any = { ...filter };
+    if (f[idKey] !== undefined) {
+      const val = f[idKey];
+      delete f[idKey];
+      f._id = toMongoId(val as string);
     }
-    const { id, ...rest } = filter as any;
-    return id ? ({ _id: id, ...rest } as any) : rest;
+    return f;
   };
-  const filterForDoc = (doc: any): any =>
-    isDetachedIdentity
-      ? idFilter((doc as any).id)
-      : ({ _id: (doc as any)._id } as any);
+  const filterForDoc = (doc: any): any => ({ _id: (doc as any)._id } as any);
 
   const SOFT_DELETE_MARK = { [config.getSoftDeleteKey()]: true };
 
@@ -332,14 +333,14 @@ export function createSmartMongoRepo<
       const projectedFields = Object.keys(projection);
       const result: any = {};
 
-      // always include id if it's in the projection
-      if (projectedFields.includes('id')) {
-        result.id = isDetachedIdentity ? (rest as any).id : mongoId;
+      // include idKey if requested (computed)
+      if (projectedFields.includes(idKey)) {
+        result[idKey] = fromMongoId(mongoId);
       }
 
       // include other projected fields
       for (const field of projectedFields) {
-        if (field !== 'id' && field in rest) {
+        if (field !== idKey && field in rest) {
           result[field] = rest[field];
         }
       }
@@ -351,16 +352,15 @@ export function createSmartMongoRepo<
     const filteredRest = Object.fromEntries(
       Object.entries(rest).filter(([k]) => !config.isHiddenField(k))
     );
-    if (isDetachedIdentity) {
-      // in detached mode, the entity already contains its business id field
-      return { ...(filteredRest as any) } as Projected<T, P>;
-    }
-    return { id: mongoId, ...filteredRest } as Projected<T, P>;
+    return { [idKey]: fromMongoId(mongoId), ...filteredRest } as Projected<
+      T,
+      P
+    > as any;
   }
 
   // helper to map entity to Mongo doc, omitting all undefined properties and system fields (system fields auto-managed)
   function toMongoDoc(entity: CreateInput, op: 'create'): any {
-    const { id, ...entityData } = entity;
+    const { [idKey]: _ignoredId, ...entityData } = entity as any;
     // Remove _id if it exists (shouldn't but might be present in some edge cases)
     const { _id, ...cleanEntityData } = entityData as any;
     config.validateScopeProperties(cleanEntityData, op);
@@ -374,17 +374,13 @@ export function createSmartMongoRepo<
 
     const filtered = deepFilterUndefined(strippedEntityData);
 
-    // identity handling
-    if (isDetachedIdentity) {
-      // business id and internal id are different
-      const businessId = generateIdFn();
-      const internalId = generateIdFn();
-      return { ...filtered, ...scope, id: businessId, _id: internalId };
-    } else {
-      // synced: use single id for both
-      const syncId = generateIdFn();
-      return { ...filtered, ...scope, _id: syncId };
-    }
+    const docId = generateDocId();
+    return {
+      ...filtered,
+      ...scope,
+      _id: docId,
+      ...(mirrorId ? { [idKey]: fromMongoId(docId) } : {}),
+    };
   }
 
   // helper to build MongoDB update operation from set/unset
@@ -439,7 +435,11 @@ export function createSmartMongoRepo<
       projection?: P
     ): Promise<Projected<T, P> | null> => {
       const mongoProjection = projection
-        ? Object.fromEntries(Object.keys(projection).map((k) => [k, 1]))
+        ? Object.fromEntries(
+            Object.keys(projection)
+              .filter((k) => k !== idKey)
+              .map((k) => [k, 1])
+          )
         : undefined;
       const doc = await collection.findOne(
         applyConstraints(idFilter(id)),
@@ -455,7 +455,11 @@ export function createSmartMongoRepo<
       projection?: P
     ): Promise<[Projected<T, P>[], string[]]> => {
       const mongoProjection = projection
-        ? Object.fromEntries(Object.keys(projection).map((k) => [k, 1]))
+        ? Object.fromEntries(
+            Object.keys(projection)
+              .filter((k) => k !== idKey)
+              .map((k) => [k, 1])
+          )
         : undefined;
       const docs = await collection
         .find(
@@ -635,7 +639,11 @@ export function createSmartMongoRepo<
       const mongoFilter = convertFilter(filter);
 
       const mongoProjection = projection
-        ? Object.fromEntries(Object.keys(projection).map((k) => [k, 1]))
+        ? Object.fromEntries(
+            Object.keys(projection)
+              .filter((k) => k !== idKey)
+              .map((k) => [k, 1])
+          )
         : undefined;
       const docs = await collection
         .find(

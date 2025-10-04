@@ -4,6 +4,7 @@ import {
   ObjectKeys,
   OptionalKeys,
   Prettify,
+  StringKeys,
 } from './types';
 
 // projection type: { field1: true, field2: true }
@@ -29,12 +30,18 @@ export type UpdateOperation<T> =
   | { set: Partial<T>; unset: OptionalKeys<T>[] };
 
 export type RepositoryConfig<T> = {
-  generateId?: () => string;
+  // Identity configuration
+  generateId?: 'server' | (() => string);
+  idKey?: StringKeys<T>; // default 'id'
+  mirrorId?: boolean; // default false
+
+  // Consistency configuration
   softDelete?: boolean;
   traceTimestamps?: true | 'server' | (() => Date);
   timestampKeys?: TimestampConfig<T>;
   version?: true | NumberKeys<T>;
-  identity?: 'synced' | 'detached';
+
+  // Tracing configuration
   traceKey?: ObjectKeys<T>;
   traceStrategy?: 'latest' | 'bounded' | 'unbounded';
   traceLimit?: number;
@@ -92,6 +99,10 @@ export function repoConfig<T extends { id: string }>(
   traceContext?: any,
   scope?: Partial<T>
 ) {
+  // Identity
+  const idKey = (config.idKey ?? ('id' as const)) as string;
+  const mirrorId = config.mirrorId === true;
+  const idStrategy = config.generateId ?? 'server';
   // Extract configuration values with defaults
   const softDeleteEnabled = config.softDelete === true;
   const versionConfig = config.version;
@@ -122,7 +133,7 @@ export function repoConfig<T extends { id: string }>(
 
   const scopeObj = scope ?? ({} as Partial<T>);
   const SCOPE_KEYS = new Set<string>(Object.keys(scopeObj));
-  const READONLY_KEYS = new Set<string>(['id', '_id']);
+  const READONLY_KEYS = new Set<string>([idKey, '_id']);
   const HIDDEN_META_KEYS = new Set<string>();
   const configuredKeys: string[] = [];
 
@@ -198,6 +209,15 @@ export function repoConfig<T extends { id: string }>(
   }
 
   return {
+    get idKey() {
+      return idKey;
+    },
+    get mirrorId() {
+      return mirrorId;
+    },
+    get idStrategy() {
+      return idStrategy;
+    },
     get softDeleteEnabled() {
       return softDeleteEnabled;
     },
