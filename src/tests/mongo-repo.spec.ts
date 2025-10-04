@@ -503,7 +503,7 @@ describe('createSmartMongoRepo', function () {
         collection: testCollection(),
         mongoClient: mongo.client,
       });
-      const retrieved = await repo.getById('non-existent-id');
+      const retrieved = await repo.getById(new ObjectId().toHexString());
       expect(retrieved).toBeNull();
     });
 
@@ -545,17 +545,19 @@ describe('createSmartMongoRepo', function () {
         createdIds.push(createdId);
       }
 
+      const nonExistent1 = new ObjectId().toHexString();
+      const nonExistent2 = new ObjectId().toHexString();
       const requestedIds = [
         ...createdIds.slice(0, 3),
-        'non-existent-1',
-        'non-existent-2',
+        nonExistent1,
+        nonExistent2,
       ];
       const [found, notFound] = await repo.getByIds(requestedIds);
 
       expect(found).toHaveLength(3);
       expect(notFound).toHaveLength(2);
       expect(notFound).toEqual(
-        expect.arrayContaining(['non-existent-1', 'non-existent-2'])
+        expect.arrayContaining([nonExistent1, nonExistent2])
       );
 
       // check that all expected entities are found, regardless of order
@@ -569,9 +571,13 @@ describe('createSmartMongoRepo', function () {
         collection: testCollection(),
         mongoClient: mongo.client,
       });
-      const [found, notFound] = await repo.getByIds(['id1', 'id2', 'id3']);
 
-      expect([found, notFound]).toEqual([[], ['id1', 'id2', 'id3']]);
+      const nonExistendIds = range(0, 3).map(() =>
+        new ObjectId().toHexString()
+      );
+      const [found, notFound] = await repo.getByIds(nonExistendIds);
+
+      expect([found, notFound]).toEqual([[], nonExistendIds]);
     });
 
     it('should support projections', async () => {
@@ -584,7 +590,8 @@ describe('createSmartMongoRepo', function () {
       );
       const createdIds = await repo.createMany(entities);
 
-      const requestedIds = [...createdIds, 'non-existent-1'];
+      const nonExistent1 = new ObjectId().toHexString();
+      const requestedIds = [...createdIds, nonExistent1];
       const [found, notFound] = await repo.getByIds(requestedIds, {
         name: true,
         email: true,
@@ -603,7 +610,7 @@ describe('createSmartMongoRepo', function () {
         });
       }
 
-      expect([found.length, notFound]).toEqual([3, ['non-existent-1']]);
+      expect([found.length, notFound]).toEqual([3, [nonExistent1]]);
     });
   });
 
@@ -725,10 +732,12 @@ describe('createSmartMongoRepo', function () {
         mongoClient: mongo.client,
       });
       // this should not throw an error
-      await repo.update('non-existent-id', { set: { name: 'New Name' } });
+      await repo.update(new ObjectId().toHexString(), {
+        set: { name: 'New Name' },
+      });
 
       // verify no entity was created
-      const retrieved = await repo.getById('non-existent-id');
+      const retrieved = await repo.getById(new ObjectId().toHexString());
       expect(retrieved).toBeNull();
 
       const matched = await repo.find({ name: 'New Name' });
@@ -905,7 +914,7 @@ describe('createSmartMongoRepo', function () {
       ]);
 
       // include a non-existent id; this should not throw
-      const nonExistentId = 'non-existent-id';
+      const nonExistentId = new ObjectId().toHexString();
       await repo.updateMany([...createdIds, nonExistentId], {
         set: { isActive: false },
       });
@@ -938,7 +947,7 @@ describe('createSmartMongoRepo', function () {
         collection: testCollection(),
         mongoClient: mongo.client,
       });
-      await repo.delete('non-existent-id');
+      await repo.delete(new ObjectId().toHexString());
     });
   });
 
@@ -987,7 +996,11 @@ describe('createSmartMongoRepo', function () {
       const entity = createTestEntity({ name: 'Test Entity' });
       const createdId = await repo.create(entity);
 
-      const ids = [createdId, 'non-existent-1', 'non-existent-2'];
+      const ids = [
+        createdId,
+        new ObjectId().toHexString(),
+        new ObjectId().toHexString(),
+      ];
 
       // this should not throw an error
       await repo.deleteMany(ids);
