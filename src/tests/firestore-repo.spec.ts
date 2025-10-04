@@ -1123,6 +1123,24 @@ describe('createSmartFirestoreRepo', function () {
       );
       expect(results).toHaveLength(0);
     });
+
+    it('should support filtering by id field', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+      const [aId, bId] = await repo.createMany([
+        createTestEntity({ name: 'A' }),
+        createTestEntity({ name: 'B' }),
+      ]);
+
+      const onlyA = await repo.find({ id: aId });
+      expect(onlyA).toHaveLength(1);
+      expect(onlyA[0].id).toBe(aId);
+
+      const onlyB = await repo.find({ id: bId }, { id: true, name: true });
+      expect(onlyB).toEqual([{ id: bId, name: 'B' }]);
+    });
   });
 
   describe('count', () => {
@@ -1160,6 +1178,21 @@ describe('createSmartFirestoreRepo', function () {
 
       const count = await repo.count({ name: 'Non-existent' });
       expect(count).toBe(0);
+    });
+
+    it('should support counting by id field', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+      const [aId, bId] = await repo.createMany([
+        createTestEntity({ name: 'A' }),
+        createTestEntity({ name: 'B' }),
+      ]);
+
+      expect(await repo.count({ id: aId })).toBe(1);
+      expect(await repo.count({ id: bId })).toBe(1);
+      expect(await repo.count({ id: 'does-not-exist' })).toBe(0);
     });
   });
 
