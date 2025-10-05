@@ -540,9 +540,7 @@ export function createSmartFirestoreRepo<
             const doc = await transaction.get(docRef);
 
             if (doc.exists) {
-              const docData = doc.data()! as any;
-              // Skip soft-deleted documents
-              if (config.softDeleteEnabled && docData[SOFT_DELETE_KEY]) {
+              if (config.softDeleted(doc.data())) {
                 continue;
               }
               transaction.update(docRef, updateOperation);
@@ -558,9 +556,7 @@ export function createSmartFirestoreRepo<
 
           for (const doc of docs) {
             if (doc.exists) {
-              const docData = doc.data()! as any;
-              // Skip soft-deleted documents
-              if (config.softDeleteEnabled && docData[SOFT_DELETE_KEY]) {
+              if (config.softDeleted(doc.data())) {
                 continue;
               }
               batch.update(doc.ref, updateOperation);
@@ -646,7 +642,6 @@ export function createSmartFirestoreRepo<
         }
       }
 
-      // Apply scope constraints
       query = applyConstraints(query);
 
       // Apply server-side projection
@@ -678,16 +673,6 @@ export function createSmartFirestoreRepo<
       for (const doc of snapshot.docs) {
         const result = fromFirestoreDoc(doc, projection);
         if (result) {
-          // Client-side soft delete filtering (since Firestore can't do server-side filtering)
-          if (config.softDeleteEnabled) {
-            const docData = doc.data();
-            if (
-              SOFT_DELETE_KEY in docData &&
-              (docData as any)[SOFT_DELETE_KEY]
-            ) {
-              continue; // Skip soft deleted document
-            }
-          }
           results.push(result);
         }
       }
@@ -719,37 +704,22 @@ export function createSmartFirestoreRepo<
         }
       }
 
-      // Apply scope constraints
       query = applyConstraints(query);
 
-      // Apply server-side projection for efficiency
       if (config.softDeleteEnabled) {
-        // Only fetch soft-delete key for client-side filtering
         query = query.select(SOFT_DELETE_KEY);
       } else {
-        // No fields needed for count when soft delete is disabled - empty projection
+        // empty projection for count when soft-delete is disabled
         query = query.select();
       }
 
       const snapshot = await query.get();
 
-      // Client-side soft delete filtering (since Firestore can't do server-side filtering)
       if (!config.softDeleteEnabled) {
         return snapshot.size;
       }
 
-      let count = 0;
-      for (const doc of snapshot.docs) {
-        const docData = doc.data();
-        // Only count documents that are not soft deleted
-        if (
-          !(SOFT_DELETE_KEY in docData && (docData as any)[SOFT_DELETE_KEY])
-        ) {
-          count++;
-        }
-      }
-
-      return count;
+      return snapshot.docs.filter((d) => !config.softDeleted(d.data())).length;
     },
 
     countBySpec: async (spec: Specification<T>): Promise<number> => {
