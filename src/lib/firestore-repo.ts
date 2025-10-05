@@ -285,6 +285,11 @@ export function createSmartFirestoreRepo<
     }
 
     const rawDocData = doc.data()!;
+
+    if (config.scopeBreach(rawDocData)) {
+      return null;
+    }
+
     const softDeleted = config.softDeleteEnabled && rawDocData[SOFT_DELETE_KEY];
     if (softDeleted) {
       return null;
@@ -410,9 +415,6 @@ export function createSmartFirestoreRepo<
 
       // Apply client-side scope filtering
       // TODO - better in fromFirestoreDoc???
-      if (result && config.scopeBreach(result as any)) {
-        return null; // Document doesn't match scope
-      }
 
       return result;
     },

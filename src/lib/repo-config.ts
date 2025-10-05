@@ -340,9 +340,10 @@ export function repoConfig<T extends { id: string }>(
       }
     },
 
-    scopeBreach: (filter: Partial<T>): boolean => {
+    scopeBreach: (input: any): boolean => {
+      const data = input ?? {};
       return Object.entries(scopeObj).some(
-        ([k, v]) => (filter as any)[k] !== undefined && v !== (filter as any)[k]
+        ([k, v]) => data[k] !== undefined && v !== data[k]
       );
     },
   };

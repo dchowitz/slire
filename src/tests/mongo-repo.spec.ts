@@ -527,6 +527,25 @@ describe('createSmartMongoRepo', function () {
         email: 'test@example.com',
       });
     });
+
+    it('should return null for scope-breached docs even if projection excludes scope fields', async () => {
+      const base = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+      const id = await base.create(
+        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' })
+      );
+
+      const scoped = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        scope: { tenantId: 'tenant-B' },
+      });
+
+      const result = await scoped.getById(id, { id: true, name: true });
+      expect(result).toBeNull();
+    });
   });
 
   describe('getByIds', () => {
@@ -1138,6 +1157,28 @@ describe('createSmartMongoRepo', function () {
       const onlyB = await repo.find({ id: bId }, { id: true, name: true });
       expect(onlyB).toEqual([{ id: bId, name: 'B' }]);
     });
+
+    it('should return empty when filter breaches scope even if projection excludes scope fields', async () => {
+      const base = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+      const id = await base.create(
+        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' })
+      );
+
+      const scoped = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        scope: { tenantId: 'tenant-B' },
+      });
+
+      const results = await scoped.find({ id }, {
+        id: true,
+        name: true,
+      } as any);
+      expect(results).toHaveLength(0);
+    });
   });
 
   describe('count', () => {
@@ -1191,6 +1232,24 @@ describe('createSmartMongoRepo', function () {
       expect(await repo.count({ id: aId })).toBe(1);
       expect(await repo.count({ id: bId })).toBe(1);
       expect(await repo.count({ id: new ObjectId().toHexString() })).toBe(0);
+    });
+
+    it('should return 0 when counting by id that breaches scope', async () => {
+      const base = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+      const id = await base.create(
+        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' })
+      );
+
+      const scoped = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+        scope: { tenantId: 'tenant-B' },
+      });
+
+      expect(await scoped.count({ id })).toBe(0);
     });
   });
 
