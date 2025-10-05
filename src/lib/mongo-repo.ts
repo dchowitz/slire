@@ -308,13 +308,13 @@ export function createSmartMongoRepo<
   }
 
   function applyConstraints(input: any): any {
-    return config.softDeleteEnabled
-      ? {
-          ...input,
-          ...scope,
-          [config.getSoftDeleteKey()]: { $exists: false },
-        }
-      : { ...input, ...scope };
+    return {
+      ...input,
+      ...scope,
+      ...(config.softDeleteEnabled
+        ? { [config.getSoftDeleteKey()]: { $exists: false } }
+        : undefined),
+    };
   }
 
   // helper to map Mongo doc to entity
