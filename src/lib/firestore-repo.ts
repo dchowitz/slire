@@ -261,8 +261,6 @@ export function createSmartFirestoreRepo<
   }
 
   function applyConstraints(query: Query): Query {
-    // Note: includeSoftDeleted option is kept for API compatibility but not used
-    // since Firestore soft delete filtering is done client-side
     let constrainedQuery = query;
 
     // Apply scope constraints
@@ -287,6 +285,11 @@ export function createSmartFirestoreRepo<
     }
 
     const rawDocData = doc.data()!;
+    const softDeleted = config.softDeleteEnabled && rawDocData[SOFT_DELETE_KEY];
+    if (softDeleted) {
+      return null;
+    }
+
     const docData = convertFirestoreTimestamps(rawDocData);
     const docId = doc.id;
 
@@ -405,20 +408,10 @@ export function createSmartFirestoreRepo<
 
       const result = fromFirestoreDoc(doc, projection);
 
-      // Apply client-side scope filtering (for synced mode where we bypass applyConstraints)
+      // Apply client-side scope filtering
+      // TODO - better in fromFirestoreDoc???
       if (result && config.scopeBreach(result as any)) {
         return null; // Document doesn't match scope
-      }
-
-      // Apply soft delete filtering if not included
-      if (
-        result &&
-        config.softDeleteEnabled &&
-        !(result as any)[SOFT_DELETE_KEY]
-      ) {
-        return result;
-      } else if (result && config.softDeleteEnabled) {
-        return null; // Document is soft-deleted
       }
 
       return result;
@@ -443,11 +436,9 @@ export function createSmartFirestoreRepo<
 
       for (const [index, doc] of docs.entries()) {
         const result = fromFirestoreDoc(doc as DocumentSnapshot<T>, projection);
-        if (
-          result &&
-          !config.scopeBreach(result as any) &&
-          (!config.softDeleteEnabled || !(result as any)[SOFT_DELETE_KEY])
-        ) {
+
+        // TODO - scope breach better in fromFirestoreDoc, or?
+        if (result && !config.scopeBreach(result as any)) {
           foundDocs.push(result);
           foundIds.add(ids[index]);
         }
@@ -682,7 +673,7 @@ export function createSmartFirestoreRepo<
       // Apply scope constraints
       query = applyConstraints(query);
 
-      // Apply server-side projection for efficiency
+      // Apply server-side projection
       if (projection) {
         const projectionFields = Object.keys(projection);
         const firestoreProjectionFields: string[] = [];

@@ -1297,6 +1297,119 @@ describe('createSmartFirestoreRepo', function () {
     });
   });
 
+  describe('soft delete', () => {
+    it('soft deleted entities stay in the database', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'Test Entity' }));
+      await repo.delete(id);
+
+      const raw = await rawTestCollection().doc(id).get();
+      expect(raw.exists).toBe(true);
+      expect(raw.data()).toMatchObject({ _deleted: true });
+    });
+
+    it('update should not touch soft-deleted entities by default', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'Test Entity' }));
+      await repo.delete(id);
+
+      await repo.update(id, { set: { name: 'Should Not Update' } });
+      const raw = await rawTestCollection().doc(id).get();
+      const data = raw.data()!;
+      expect(data._deleted).toBe(true);
+      expect(data.name).toBe('Test Entity');
+    });
+
+    it('update can target soft-deleted entities with includeSoftDeleted option', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'Entity 1' }));
+      await repo.delete(id);
+
+      await repo.update(
+        id,
+        { set: { name: 'Updated Soft Deleted' } },
+        { includeSoftDeleted: true }
+      );
+
+      const raw1 = await rawTestCollection().doc(id).get();
+      const data = raw1.data()!;
+      expect(data.name).toBe('Updated Soft Deleted');
+      expect(data._deleted).toBe(true);
+
+      // entity should still not appear in normal queries
+      expect(await repo.getById(id)).toBeNull();
+    });
+
+    it('should not return soft-deleted entities in reads', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      const [a, b, c] = await repo.createMany([
+        createTestEntity({ name: 'A' }),
+        createTestEntity({ name: 'B' }),
+        createTestEntity({ name: 'C' }),
+      ]);
+
+      await repo.delete(b);
+
+      const foundAll = await repo.find({});
+      expect(foundAll.map((e) => e.name)).toEqual(
+        expect.arrayContaining(['A', 'C'])
+      );
+
+      const gotB = await repo.getById(b);
+      expect(gotB).toBeNull();
+
+      const [found, notFound] = await repo.getByIds([a, b, c]);
+      expect(found.map((e) => e.name)).toEqual(
+        expect.arrayContaining(['A', 'C'])
+      );
+      expect(notFound).toEqual([b]);
+
+      const count = await repo.count({});
+      expect(count).toBe(2);
+    });
+
+    it('should soft delete many', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      const ids = await repo.createMany([
+        createTestEntity({ name: 'A' }),
+        createTestEntity({ name: 'B' }),
+        createTestEntity({ name: 'C' }),
+      ]);
+
+      await repo.deleteMany([ids[0], ids[2]]);
+
+      const remaining = await repo.find({});
+      expect(remaining.map((e) => e.name).sort()).toEqual(['B']);
+      const count = await repo.count({});
+      expect(count).toBe(1);
+    });
+  });
+
   describe('scoping', () => {
     it('scoped repo only has access to entities matching the scope', async () => {
       const repo = createSmartFirestoreRepo({
