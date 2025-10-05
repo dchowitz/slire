@@ -346,5 +346,9 @@ export function repoConfig<T extends { id: string }>(
         ([k, v]) => data[k] !== undefined && v !== data[k]
       );
     },
+
+    softDeleted: (input: any): boolean => {
+      return softDeleteEnabled && (input ?? {})[SOFT_DELETE_KEY] === true;
+    },
   };
 }

@@ -286,12 +286,7 @@ export function createSmartFirestoreRepo<
 
     const rawDocData = doc.data()!;
 
-    if (config.scopeBreach(rawDocData)) {
-      return null;
-    }
-
-    const softDeleted = config.softDeleteEnabled && rawDocData[SOFT_DELETE_KEY];
-    if (softDeleted) {
+    if (config.scopeBreach(rawDocData) || config.softDeleted(rawDocData)) {
       return null;
     }
 
@@ -405,14 +400,8 @@ export function createSmartFirestoreRepo<
       id: string,
       projection?: P
     ): Promise<Projected<T, P> | null> => {
-      const docRef = getDocRef(id);
-      const doc: DocumentSnapshot = transaction
-        ? await transaction.get(docRef)
-        : await docRef.get();
-
-      const result = fromFirestoreDoc(doc, projection);
-
-      return result;
+      const [found] = await repo.getByIds<P>([id], projection as any);
+      return found[0] ?? null;
     },
 
     getByIds: async <P extends Projection<T>>(
@@ -426,14 +415,13 @@ export function createSmartFirestoreRepo<
       const foundDocs: Projected<T, P>[] = [];
       const foundIds = new Set<string>();
 
-      // Get documents by their document IDs
       const docRefs = ids.map((id) => getDocRef(id));
       const docs = transaction
         ? await Promise.all(docRefs.map((ref) => transaction.get(ref)))
         : await firestore.getAll(...docRefs);
 
       for (const [index, doc] of docs.entries()) {
-        const result = fromFirestoreDoc(doc as DocumentSnapshot<T>, projection);
+        const result = fromFirestoreDoc(doc, projection);
         if (result) {
           foundDocs.push(result);
           foundIds.add(ids[index]);

@@ -2,8 +2,8 @@ import { CollectionReference } from '@google-cloud/firestore';
 import { omit, range, sortBy } from 'lodash-es';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  createSmartFirestoreRepo,
   convertFirestoreTimestamps,
+  createSmartFirestoreRepo,
 } from '../lib/firestore-repo';
 import {
   combineSpecs,
@@ -533,7 +533,6 @@ describe('createSmartFirestoreRepo', function () {
 
       const createdId = await repo.create(entity);
 
-      // test projection with specific fields
       const retrieved = await repo.getById(createdId, {
         name: true,
         email: true,
@@ -545,23 +544,22 @@ describe('createSmartFirestoreRepo', function () {
       });
     });
 
-    it('should return null for scope-breached docs even if projection excludes scope fields', async () => {
+    it('should return null for scope-breached docs (even if projection excludes scope fields)', async () => {
       const base = createSmartFirestoreRepo({
         collection: testCollection(),
         firestore: firestore.firestore,
       });
+
       const id = await base.create(
         createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' })
       );
 
-      // repo with conflicting scope
       const scoped = createSmartFirestoreRepo({
         collection: testCollection(),
         firestore: firestore.firestore,
         scope: { tenantId: 'tenant-B' },
       });
 
-      // Projection excludes tenantId → scopeBreach check happens after projection, so it doesn't see tenantId
       const result = await scoped.getById(id, { id: true, name: true });
       expect(result).toBeNull();
     });
@@ -573,15 +571,10 @@ describe('createSmartFirestoreRepo', function () {
         collection: testCollection(),
         firestore: firestore.firestore,
       });
-      const entities = range(0, 5).map((i) =>
-        createTestEntity({ name: `Entity ${i}` })
-      );
-      const createdIds: string[] = [];
 
-      for (const entity of entities) {
-        const createdId = await repo.create(entity);
-        createdIds.push(createdId);
-      }
+      const createdIds = await repo.createMany(
+        range(0, 5).map((i) => createTestEntity({ name: `Entity ${i}` }))
+      );
 
       const requestedIds = [
         ...createdIds.slice(0, 3),
@@ -617,10 +610,10 @@ describe('createSmartFirestoreRepo', function () {
         collection: testCollection(),
         firestore: firestore.firestore,
       });
-      const entities = range(0, 3).map((i) =>
-        createTestEntity({ name: `Entity ${i}` })
+
+      const createdIds = await repo.createMany(
+        range(0, 3).map((i) => createTestEntity({ name: `Entity ${i}` }))
       );
-      const createdIds = await repo.createMany(entities);
 
       const requestedIds = [...createdIds, 'non-existent-1'];
       const [found, notFound] = await repo.getByIds(requestedIds, {
