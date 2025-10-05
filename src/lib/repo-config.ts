@@ -327,6 +327,7 @@ export function repoConfig<T extends { id: string }>(
       }
     },
 
+    // TODO - check if still needed
     validateScopeProperties: (
       entity: any,
       operation: WriteOp | 'unset'

@@ -919,6 +919,24 @@ describe('createSmartFirestoreRepo', function () {
         name: 'Original Name',
       });
     });
+
+    it('should not update a soft-deleted entity (id path, server-side filtered)', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'Entity 1' }));
+      await repo.delete(id);
+
+      await repo.update(id, { set: { name: 'Updated Soft Deleted' } });
+
+      const raw = await rawTestCollection().doc(id).get();
+      const data = raw.data()!;
+      expect(data._deleted).toBe(true);
+      expect(data.name).toBe('Entity 1');
+    });
   });
 
   describe('updateMany', () => {
@@ -943,6 +961,35 @@ describe('createSmartFirestoreRepo', function () {
       const [found] = await repo.getByIds(createdIds);
       expect(found).toHaveLength(3);
       expect(found.every((e) => e.isActive === false)).toBe(true);
+    });
+
+    it('should update only active entities (skip soft-deleted) in bulk', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+      const [aId, bId, cId] = await repo.createMany([
+        createTestEntity({ name: 'A' }),
+        createTestEntity({ name: 'B' }),
+        createTestEntity({ name: 'C' }),
+      ]);
+
+      // soft delete B
+      await repo.delete(bId);
+
+      // bulk update
+      await repo.updateMany([aId, bId, cId], { set: { isActive: false } });
+
+      const rawA = (await rawTestCollection().doc(aId).get()).data()!;
+      const rawB = (await rawTestCollection().doc(bId).get()).data()!;
+      const rawC = (await rawTestCollection().doc(cId).get()).data()!;
+
+      expect(rawA.isActive).toBe(false);
+      expect(rawC.isActive).toBe(false);
+      // B remains unchanged besides _deleted
+      expect(rawB._deleted).toBe(true);
+      expect(rawB.isActive).toBe(true);
     });
   });
 

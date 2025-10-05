@@ -37,6 +37,7 @@ export type FirestoreRepositoryConfig<T> = Omit<
 
 // Firestore-specific constants
 const FIRESTORE_MAX_WRITES_PER_BATCH = 500;
+const FIRESTORE_IN_LIMIT = 10; // conservative 'in' operator limit across SDKs
 
 // Firestore repository type with additional Firestore-specific helpers and transaction methods
 // Prettified to show expanded type in IDE tooltips instead of complex intersection
@@ -263,14 +264,13 @@ export function createSmartFirestoreRepo<
   function applyConstraints(query: Query): Query {
     let constrainedQuery = query;
 
-    // Apply scope constraints
+    if (config.softDeleteEnabled) {
+      constrainedQuery = constrainedQuery.where(SOFT_DELETE_KEY, '==', false);
+    }
+
     for (const [key, value] of Object.entries(scope)) {
       constrainedQuery = constrainedQuery.where(key, '==', value);
     }
-
-    // Note: Firestore has no "field-does-not-exist" operator like MongoDB's $exists: false
-    // So we can't filter soft-deleted documents server-side and must rely on client-side filtering
-    // The includeSoftDeleted option is passed through for client-side filtering
 
     return constrainedQuery;
   }
@@ -513,7 +513,23 @@ export function createSmartFirestoreRepo<
       update: UpdateOperation<UpdateInput>,
       options?: { mergeTrace?: any }
     ): Promise<void> => {
-      await repo.updateMany([id], update as any, options);
+      const updateOperation = buildUpdateOperation(update, options?.mergeTrace);
+      const query = applyConstraints(
+        collection.where(FieldPath.documentId(), '==', id).select()
+      );
+
+      if (transaction) {
+        const snapshot = await transaction.get(query);
+        if (!snapshot.empty) {
+          transaction.update(snapshot.docs[0].ref, updateOperation);
+        }
+        return;
+      }
+
+      const snapshot = await query.get();
+      if (!snapshot.empty) {
+        await snapshot.docs[0].ref.update(updateOperation);
+      }
     },
 
     updateMany: async (
@@ -525,46 +541,30 @@ export function createSmartFirestoreRepo<
         return;
       }
 
-      // use chunking for large batches to avoid Firestore limitations
-      const chunks = chunk(ids, FIRESTORE_MAX_WRITES_PER_BATCH);
-
-      for (const idChunk of chunks) {
+      for (const idChunk of chunk(ids, FIRESTORE_MAX_WRITES_PER_BATCH)) {
         const updateOperation = buildUpdateOperation(
           update,
           options?.mergeTrace
         );
 
-        if (transaction) {
-          // Handle transaction updates
-          for (const id of idChunk) {
-            const docRef = getDocRef(id);
-            const doc = await transaction.get(docRef);
+        for (const inChunk of chunk(idChunk, FIRESTORE_IN_LIMIT)) {
+          const query = applyConstraints(
+            collection.where(FieldPath.documentId(), 'in', inChunk).select()
+          );
 
-            if (doc.exists) {
-              if (config.softDeleted(doc.data())) {
-                continue;
-              }
-              transaction.update(docRef, updateOperation);
+          if (transaction) {
+            const snap = await transaction.get(query);
+            for (const doc of snap.docs) {
+              transaction.update(doc.ref, updateOperation);
             }
-          }
-        } else {
-          // Handle batch updates
-          const batch = firestore.batch();
-
-          // We need to check each document first due to soft delete constraints
-          const docRefs = idChunk.map((id) => getDocRef(id));
-          const docs = await firestore.getAll(...docRefs);
-
-          for (const doc of docs) {
-            if (doc.exists) {
-              if (config.softDeleted(doc.data())) {
-                continue;
-              }
+          } else {
+            const batch = firestore.batch();
+            const snap = await query.get();
+            for (const doc of snap.docs) {
               batch.update(doc.ref, updateOperation);
             }
+            await batch.commit();
           }
-
-          await batch.commit();
         }
       }
     },
