@@ -401,7 +401,7 @@ export function createSmartFirestoreRepo<
       id: string,
       projection?: P
     ): Promise<Projected<T, P> | null> => {
-      const [found] = await repo.getByIds<P>([id], projection as any);
+      const [found] = await repo.getByIds<P>([id], projection as P);
       return found[0] ?? null;
     },
 
@@ -573,17 +573,44 @@ export function createSmartFirestoreRepo<
       id: string,
       options?: { mergeTrace?: any }
     ): Promise<void> => {
-      await repo.deleteMany([id], options);
+      if (config.softDeleteEnabled) {
+        const updateOperation = applyTrace(
+          'delete',
+          applyVersion('delete', applyTimestamps('delete', SOFT_DELETE_MARK)),
+          options?.mergeTrace
+        );
+
+        const query = applyConstraints(
+          collection.where(FieldPath.documentId(), '==', id).select()
+        );
+
+        if (transaction) {
+          const snap = await transaction.get(query);
+          if (!snap.empty) {
+            transaction.update(snap.docs[0].ref, updateOperation);
+          }
+        } else {
+          const snap = await query.get();
+          if (!snap.empty) {
+            await snap.docs[0].ref.update(updateOperation);
+          }
+        }
+      } else {
+        const docRef = getDocRef(id);
+        if (transaction) {
+          transaction.delete(docRef);
+        } else {
+          await docRef.delete();
+        }
+      }
     },
 
     deleteMany: async (
       ids: string[],
       options?: { mergeTrace?: any }
     ): Promise<void> => {
-      // use chunking for large batches to avoid Firestore limitations
-      const chunks = chunk(ids, FIRESTORE_MAX_WRITES_PER_BATCH);
-
-      for (const idChunk of chunks) {
+      if (ids.length < 1) return;
+      for (const idChunk of chunk(ids, FIRESTORE_MAX_WRITES_PER_BATCH)) {
         if (config.softDeleteEnabled) {
           const updateOperation = applyTrace(
             'delete',
@@ -591,33 +618,44 @@ export function createSmartFirestoreRepo<
             options?.mergeTrace
           );
 
-          if (transaction) {
-            for (const id of idChunk) {
-              const docRef = getDocRef(id);
-              transaction.update(docRef, updateOperation);
+          for (const inChunk of chunk(idChunk, FIRESTORE_IN_LIMIT)) {
+            const query = applyConstraints(
+              collection.where(FieldPath.documentId(), 'in', inChunk).select()
+            );
+
+            if (transaction) {
+              const snap = await transaction.get(query);
+              for (const doc of snap.docs) {
+                transaction.update(doc.ref, updateOperation);
+              }
+            } else {
+              const batch = firestore.batch();
+              const snap = await query.get();
+              for (const doc of snap.docs) {
+                batch.update(doc.ref, updateOperation);
+              }
+              await batch.commit();
             }
-          } else {
-            const batch = firestore.batch();
-            for (const id of idChunk) {
-              const docRef = getDocRef(id);
-              batch.update(docRef, updateOperation);
-            }
-            await batch.commit();
           }
         } else {
-          // Hard delete
-          if (transaction) {
-            for (const id of idChunk) {
-              const docRef = getDocRef(id);
-              transaction.delete(docRef);
+          for (const inChunk of chunk(idChunk, FIRESTORE_IN_LIMIT)) {
+            const query = collection
+              .where(FieldPath.documentId(), 'in', inChunk)
+              .select();
+
+            if (transaction) {
+              const snap = await transaction.get(query);
+              for (const doc of snap.docs) {
+                transaction.delete(doc.ref);
+              }
+            } else {
+              const batch = firestore.batch();
+              const snap = await query.get();
+              for (const doc of snap.docs) {
+                batch.delete(doc.ref);
+              }
+              await batch.commit();
             }
-          } else {
-            const batch = firestore.batch();
-            for (const id of idChunk) {
-              const docRef = getDocRef(id);
-              batch.delete(docRef);
-            }
-            await batch.commit();
           }
         }
       }

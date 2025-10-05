@@ -1072,6 +1072,36 @@ describe('createSmartFirestoreRepo', function () {
       const deleted = await repo.getById(createdId);
       expect(deleted).toBeNull();
     });
+
+    it('should soft delete only active docs and ignore already soft-deleted/non-existing', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      const [aId, bId, cId] = await repo.createMany([
+        createTestEntity({ name: 'A' }),
+        createTestEntity({ name: 'B' }),
+        createTestEntity({ name: 'C' }),
+      ]);
+
+      // Pre-soft-delete B
+      await repo.delete(bId);
+
+      // Include a non-existent id
+      const ghost = 'non-existent-id';
+
+      await repo.deleteMany([aId, bId, cId, ghost]);
+
+      const rawA = (await rawTestCollection().doc(aId).get()).data()!;
+      const rawB = (await rawTestCollection().doc(bId).get()).data()!;
+      const rawC = (await rawTestCollection().doc(cId).get()).data()!;
+
+      expect(rawA._deleted).toBe(true);
+      expect(rawB._deleted).toBe(true);
+      expect(rawC._deleted).toBe(true);
+    });
   });
 
   describe('find', () => {
