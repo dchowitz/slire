@@ -2004,6 +2004,195 @@ describe('createSmartFirestoreRepo', function () {
       expect(d3!._updatedAt.getTime()).toBe(t.getTime());
     });
   });
+
+  describe('configurable timestamp keys', () => {
+    type EntityWithTimestamps = TestEntity & {
+      createdAt: Date;
+      updatedAt: Date;
+      deletedAt?: Date;
+    };
+
+    it('should expose timestamp fields in reads when configured as entity properties', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: firestore.firestore.collection(
+          COLLECTION_NAME
+        ) as CollectionReference<EntityWithTimestamps>,
+        firestore: firestore.firestore,
+        options: {
+          traceTimestamps: true,
+          timestampKeys: {
+            createdAt: 'createdAt',
+            updatedAt: 'updatedAt',
+            deletedAt: 'deletedAt',
+          },
+        },
+      });
+
+      const id = await repo.create(
+        createTestEntity({ name: 'Timestamp Test' })
+      );
+
+      const retrieved = await repo.getById(id);
+      expect(retrieved).toHaveProperty('createdAt');
+      expect(retrieved).toHaveProperty('updatedAt');
+      expect(retrieved!.createdAt).toBeInstanceOf(Date);
+      expect(retrieved!.updatedAt).toBeInstanceOf(Date);
+      expect(retrieved!.createdAt.getTime()).toBe(
+        retrieved!.updatedAt.getTime()
+      );
+    });
+
+    it('should support projections including timestamp fields', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: firestore.firestore.collection(
+          COLLECTION_NAME
+        ) as CollectionReference<EntityWithTimestamps>,
+        firestore: firestore.firestore,
+        options: {
+          traceTimestamps: true,
+          timestampKeys: {
+            createdAt: 'createdAt',
+            updatedAt: 'updatedAt',
+          },
+        },
+      });
+
+      const id = await repo.create(
+        createTestEntity({ name: 'Projection Test' })
+      );
+
+      const timestampsOnly = await repo.getById(id, {
+        name: true,
+        createdAt: true,
+        updatedAt: true,
+      });
+      expect(timestampsOnly).toMatchObject({
+        name: 'Projection Test',
+        createdAt: timestampsOnly!.createdAt,
+        updatedAt: timestampsOnly!.updatedAt,
+      });
+      expect(timestampsOnly).not.toHaveProperty('email');
+    });
+
+    it('should update timestamp fields during update operations', async () => {
+      let testTime = new Date('2023-01-01T00:00:00Z');
+      const clock = () => testTime;
+
+      const repo = createSmartFirestoreRepo({
+        collection: firestore.firestore.collection(
+          COLLECTION_NAME
+        ) as CollectionReference<EntityWithTimestamps>,
+        firestore: firestore.firestore,
+        options: {
+          traceTimestamps: clock,
+          timestampKeys: {
+            createdAt: 'createdAt',
+            updatedAt: 'updatedAt',
+          },
+        },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'Update Test' }));
+
+      const initial = (await repo.getById(id)) as any;
+      expect(initial.createdAt.getTime()).toBe(testTime.getTime());
+      expect(initial.updatedAt.getTime()).toBe(testTime.getTime());
+
+      // advance time and update
+      testTime = new Date('2023-01-01T01:00:00Z');
+      await repo.update(id, { set: { name: 'Updated Name' } });
+
+      const updated = (await repo.getById(id)) as any;
+      expect(updated.name).toBe('Updated Name');
+      expect(updated.createdAt.getTime()).toBe(
+        new Date('2023-01-01T00:00:00Z').getTime()
+      );
+      expect(updated.updatedAt.getTime()).toBe(testTime.getTime());
+    });
+
+    it('should prevent writing to configured timestamp fields', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: firestore.firestore.collection(
+          COLLECTION_NAME
+        ) as CollectionReference<EntityWithTimestamps>,
+        firestore: firestore.firestore,
+        options: {
+          traceTimestamps: true,
+          timestampKeys: {
+            createdAt: 'createdAt',
+            updatedAt: 'updatedAt',
+          },
+        },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'Readonly Test' }));
+
+      await expect(
+        repo.update(id, { set: { createdAt: new Date() } } as any)
+      ).rejects.toThrow('Cannot update readonly properties: createdAt');
+
+      await expect(
+        repo.update(id, { set: { updatedAt: new Date() } } as any)
+      ).rejects.toThrow('Cannot update readonly properties: updatedAt');
+    });
+
+    it('should support partial timestamp configuration', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: firestore.firestore.collection(
+          COLLECTION_NAME
+        ) as CollectionReference<EntityWithTimestamps>,
+        firestore: firestore.firestore,
+        options: {
+          traceTimestamps: true,
+          timestampKeys: {
+            // only configure createdAt, others use defaults (hidden)
+            createdAt: 'createdAt',
+          },
+        },
+      });
+
+      const entity = {
+        ...createTestEntity({ name: 'Partial Config Test' }),
+        updatedAt: new Date('2023-01-01T00:00:00Z'),
+      } as any;
+      const id = await repo.create(entity);
+
+      const retrieved = (await repo.getById(id)) as any;
+      expect(retrieved).toHaveProperty('createdAt');
+      expect(retrieved.updatedAt.getTime()).toBe(entity.updatedAt.getTime());
+      expect(retrieved).not.toHaveProperty('_updatedAt');
+
+      // raw should have hidden default _updatedAt
+      const raw = await rawTestCollection().doc(id).get();
+      const converted = convertFirestoreTimestamps(raw.data());
+      expect(converted).toHaveProperty('_updatedAt');
+    });
+
+    it('should automatically enable timestamps when timestampKeys are configured', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: firestore.firestore.collection(
+          COLLECTION_NAME
+        ) as CollectionReference<EntityWithTimestamps>,
+        firestore: firestore.firestore,
+        options: {
+          timestampKeys: {
+            createdAt: 'createdAt',
+            updatedAt: 'updatedAt',
+          },
+        },
+      });
+
+      const id = await repo.create(
+        createTestEntity({ name: 'Auto Timestamps Test' })
+      );
+
+      const retrieved = (await repo.getById(id)) as any;
+      expect(retrieved).toHaveProperty('createdAt');
+      expect(retrieved).toHaveProperty('updatedAt');
+      expect(retrieved.createdAt).toBeInstanceOf(Date);
+      expect(retrieved.updatedAt).toBeInstanceOf(Date);
+    });
+  });
 });
 
 // Test Entity type and helper function (same as MongoDB tests)
