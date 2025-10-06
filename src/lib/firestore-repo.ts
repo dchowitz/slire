@@ -285,11 +285,6 @@ export function createSmartFirestoreRepo<
     }
 
     const rawDocData = doc.data()!;
-
-    if (config.scopeBreach(rawDocData) || config.softDeleted(rawDocData)) {
-      return null;
-    }
-
     const docData = convertFirestoreTimestamps(rawDocData);
     const docId = doc.id;
 
@@ -422,6 +417,13 @@ export function createSmartFirestoreRepo<
         : await firestore.getAll(...docRefs);
 
       for (const [index, doc] of docs.entries()) {
+        if (!doc.exists) {
+          continue;
+        }
+        const docData = doc.data()!;
+        if (config.scopeBreach(docData) || config.softDeleted(docData)) {
+          continue;
+        }
         const result = fromFirestoreDoc(doc, projection);
         if (result) {
           foundDocs.push(result);
@@ -622,7 +624,8 @@ export function createSmartFirestoreRepo<
         : undefined;
 
       for (const idChunk of chunk(ids, FIRESTORE_MAX_WRITES_PER_BATCH)) {
-        // make sure we only try to delete docs that exist and are not soft-deleted (idempotency)
+        // make sure we only try to delete docs that exist (to prevent errors)
+        // and are not soft-deleted (idempotency, otherwise we'd have multiple delete trace entries)
         const snaps = await Promise.all(
           chunk(idChunk, FIRESTORE_IN_LIMIT).map((inChunk) => {
             const query = applyConstraints(
@@ -678,7 +681,7 @@ export function createSmartFirestoreRepo<
 
       query = applyConstraints(query);
 
-      // Apply server-side projection
+      // Apply server-side projection (idKey is computed from doc.id)
       if (projection) {
         const projectionFields = Object.keys(projection);
         const firestoreProjectionFields: string[] = [];
@@ -687,13 +690,6 @@ export function createSmartFirestoreRepo<
           if (field !== idKey) {
             firestoreProjectionFields.push(field);
           }
-        }
-
-        if (
-          config.softDeleteEnabled &&
-          !firestoreProjectionFields.includes(SOFT_DELETE_KEY)
-        ) {
-          firestoreProjectionFields.push(SOFT_DELETE_KEY);
         }
 
         if (firestoreProjectionFields.length > 0) {
@@ -705,6 +701,9 @@ export function createSmartFirestoreRepo<
       const results: Projected<T, P>[] = [];
 
       for (const doc of snapshot.docs) {
+        if (!doc.exists) {
+          continue;
+        }
         const result = fromFirestoreDoc(doc, projection);
         if (result) {
           results.push(result);

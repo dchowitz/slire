@@ -634,6 +634,47 @@ describe('createSmartFirestoreRepo', function () {
 
       expect([found.length, notFound]).toEqual([3, ['non-existent-1']]);
     });
+
+    it('should return only active, in-scope docs and list others in notFound', async () => {
+      // Base repo with soft-delete enabled to prepare data
+      const base = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      // Create A (in-scope), B (in-scope, will be soft-deleted), C (out-of-scope)
+      const aId = await base.create(
+        createTestEntity({ tenantId: 'acme', name: 'A' })
+      );
+      const bId = await base.create(
+        createTestEntity({ tenantId: 'acme', name: 'B' })
+      );
+      const cId = await base.create(
+        createTestEntity({ tenantId: 'other', name: 'C' })
+      );
+
+      // Soft delete B
+      await base.delete(bId);
+
+      const scoped = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        scope: { tenantId: 'acme' },
+        options: { softDelete: true },
+      });
+
+      const ghost = 'non-existent-id';
+      const [found, notFound] = await scoped.getByIds([aId, bId, cId, ghost], {
+        id: true,
+        name: true,
+      });
+
+      // Only A (active, in-scope) should be found
+      expect(found).toEqual([{ id: aId, name: 'A' }]);
+      // B (soft-deleted), C (scope-breach), ghost (non-existent) should be notFound
+      expect(notFound.sort()).toEqual([bId, cId, ghost].sort());
+    });
   });
 
   describe('update', () => {
