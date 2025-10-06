@@ -1902,6 +1902,108 @@ describe('createSmartFirestoreRepo', function () {
       ).rejects.toThrow('Cannot update readonly properties');
     });
   });
+
+  describe('trace timestamps', () => {
+    it('should set timestamps when traceTimestamps enabled (app time)', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true, traceTimestamps: true },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'TS' }));
+
+      let raw = await rawTestCollection().doc(id).get();
+      const d1 = convertFirestoreTimestamps(raw.data());
+      expect(d1?._createdAt).toBeInstanceOf(Date);
+      expect(d1?._updatedAt).toBeInstanceOf(Date);
+      expect(d1?._deletedAt).toBeUndefined();
+      // createdAt and updatedAt should be equal on create
+      expect(d1!._createdAt.getTime()).toBe(d1!._updatedAt.getTime());
+
+      // ensure the next update happens at a later timestamp
+      await new Promise((r) => setTimeout(r, 2));
+      await repo.update(id, { set: { name: 'TS2' } });
+      raw = await rawTestCollection().doc(id).get();
+      const d2 = convertFirestoreTimestamps(raw.data());
+      expect(d2?._updatedAt).toBeInstanceOf(Date);
+      expect(d2!._updatedAt.getTime()).toBeGreaterThan(
+        d1!._updatedAt.getTime()
+      );
+
+      // ensure delete happens at a later timestamp
+      await new Promise((r) => setTimeout(r, 2));
+      await repo.delete(id);
+      raw = await rawTestCollection().doc(id).get();
+      const d3 = convertFirestoreTimestamps(raw.data());
+      expect(d3?._deletedAt).toBeInstanceOf(Date);
+      // on delete, updatedAt and deletedAt should be equal and newer than previous updatedAt
+      expect(d3!._updatedAt.getTime()).toBe(d3!._deletedAt.getTime());
+      expect(d3!._updatedAt.getTime()).toBeGreaterThan(
+        d2!._updatedAt.getTime()
+      );
+    });
+
+    it('should set timestamps using Firestore server time', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true, traceTimestamps: 'server' },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'TS-M' }));
+      let raw = await rawTestCollection().doc(id).get();
+      const d1 = convertFirestoreTimestamps(raw.data());
+      expect(d1?._createdAt).toBeInstanceOf(Date);
+      expect(d1?._updatedAt).toBeInstanceOf(Date);
+
+      await new Promise((r) => setTimeout(r, 2));
+      await repo.update(id, { set: { name: 'TS2' } });
+      raw = await rawTestCollection().doc(id).get();
+      const d2 = convertFirestoreTimestamps(raw.data());
+      expect(d2!._updatedAt.getTime()).toBeGreaterThan(
+        d1!._updatedAt.getTime()
+      );
+
+      await new Promise((r) => setTimeout(r, 2));
+      await repo.delete(id);
+      raw = await rawTestCollection().doc(id).get();
+      const d3 = convertFirestoreTimestamps(raw.data());
+      expect(d3!._updatedAt.getTime()).toBe(d3!._deletedAt.getTime());
+      expect(d3!._updatedAt.getTime()).toBeGreaterThan(
+        d2!._updatedAt.getTime()
+      );
+    });
+
+    it('should use custom clock function', async () => {
+      let t = new Date('2020-01-01T00:00:00Z');
+      const clock = () => new Date(t);
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true, traceTimestamps: clock },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'TS-C' }));
+      let raw = await rawTestCollection().doc(id).get();
+      const d1 = convertFirestoreTimestamps(raw.data());
+      expect(d1!._createdAt.getTime()).toBe(t.getTime());
+      expect(d1!._updatedAt.getTime()).toBe(t.getTime());
+
+      t = new Date('2020-01-01T00:00:01Z');
+      await repo.update(id, { set: { name: 'X' } });
+      raw = await rawTestCollection().doc(id).get();
+      const d2 = convertFirestoreTimestamps(raw.data());
+      expect(d2!._updatedAt.getTime()).toBe(t.getTime());
+
+      t = new Date('2020-01-01T00:00:02Z');
+      await repo.delete(id);
+      raw = await rawTestCollection().doc(id).get();
+      const d3 = convertFirestoreTimestamps(raw.data());
+      expect(d3!._deletedAt.getTime()).toBe(t.getTime());
+      expect(d3!._updatedAt.getTime()).toBe(t.getTime());
+    });
+  });
 });
 
 // Test Entity type and helper function (same as MongoDB tests)
