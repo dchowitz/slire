@@ -62,6 +62,7 @@ class FirestoreFixture {
       throw new Error('Firestore not available');
     }
 
+    // Clear top-level collection
     const batch = this.firestoreInstance.batch();
     const snapshot = await this.firestoreInstance
       .collection(collectionName)
@@ -73,6 +74,18 @@ class FirestoreFixture {
 
     if (snapshot.size > 0) {
       await batch.commit();
+    }
+
+    // Also clear all subcollections with the same name via collection group (path-scoped tests)
+    const groupSnap = await this.firestoreInstance
+      .collectionGroup(collectionName)
+      .get();
+    if (!groupSnap.empty) {
+      const groupBatch = this.firestoreInstance.batch();
+      groupSnap.docs.forEach((doc) => {
+        groupBatch.delete(doc.ref);
+      });
+      await groupBatch.commit();
     }
   }
 }

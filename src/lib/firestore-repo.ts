@@ -268,10 +268,7 @@ export function createSmartFirestoreRepo<
       constrainedQuery = constrainedQuery.where(SOFT_DELETE_KEY, '==', false);
     }
 
-    for (const [key, value] of Object.entries(scope)) {
-      constrainedQuery = constrainedQuery.where(key, '==', value);
-    }
-
+    // Path-scoped mode: do not add scope filters to queries. Scope is validated on writes only.
     return constrainedQuery;
   }
 
@@ -421,7 +418,8 @@ export function createSmartFirestoreRepo<
           continue;
         }
         const docData = doc.data()!;
-        if (config.scopeBreach(docData) || config.softDeleted(docData)) {
+        // Path-scoped reads: only exclude soft-deleted documents; scope is enforced by collection path
+        if (config.softDeleted(docData)) {
           continue;
         }
         const result = fromFirestoreDoc(doc, projection);
@@ -663,10 +661,6 @@ export function createSmartFirestoreRepo<
       filter: Partial<T>,
       projection?: P
     ): Promise<Projected<T, P>[]> => {
-      if (config.scopeBreach(filter)) {
-        return [];
-      }
-
       let query: Query = collection;
 
       // Apply filter constraints (map idKey to documentId)
@@ -721,10 +715,6 @@ export function createSmartFirestoreRepo<
     },
 
     count: async (filter: Partial<T>): Promise<number> => {
-      if (config.scopeBreach(filter)) {
-        return 0;
-      }
-
       let query: Query = collection;
 
       // Apply filter constraints (map idKey to documentId)

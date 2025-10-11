@@ -31,6 +31,14 @@ describe('createSmartFirestoreRepo', function () {
     ) as CollectionReference<TestEntity>;
   }
 
+  function scopedTestCollection(
+    orgId: string
+  ): CollectionReference<TestEntity> {
+    return firestore.firestore.collection(
+      `tenants/${orgId}/${COLLECTION_NAME}`
+    ) as CollectionReference<TestEntity>;
+  }
+
   function rawTestCollection(): CollectionReference<any> {
     return firestore.firestore.collection(COLLECTION_NAME);
   }
@@ -542,7 +550,7 @@ describe('createSmartFirestoreRepo', function () {
       });
     });
 
-    it('should return null for scope-breached docs (even if projection excludes scope fields)', async () => {
+    it('should return entity even if configured scope mismatches (reads ignore scope)', async () => {
       const base = createSmartFirestoreRepo({
         collection: testCollection(),
         firestore: firestore.firestore,
@@ -559,7 +567,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const result = await scoped.getById(id, { id: true, name: true });
-      expect(result).toBeNull();
+      expect(result).toEqual({ id, name: 'Scoped' });
     });
   });
 
@@ -635,45 +643,39 @@ describe('createSmartFirestoreRepo', function () {
       expect([found.length, notFound]).toEqual([3, ['non-existent-1']]);
     });
 
-    it('should return only active, in-scope docs and list others in notFound', async () => {
-      // Base repo with soft-delete enabled to prepare data
-      const base = createSmartFirestoreRepo({
+    it('should return only active docs and list soft-deleted/non-existent in notFound (reads ignore scope)', async () => {
+      // Prepare data in one collection
+      const repo = createSmartFirestoreRepo({
         collection: testCollection(),
         firestore: firestore.firestore,
         options: { softDelete: true },
       });
 
-      // Create A (in-scope), B (in-scope, will be soft-deleted), C (out-of-scope)
-      const aId = await base.create(
+      const aId = await repo.create(
         createTestEntity({ tenantId: 'acme', name: 'A' })
       );
-      const bId = await base.create(
+      const bId = await repo.create(
         createTestEntity({ tenantId: 'acme', name: 'B' })
       );
-      const cId = await base.create(
+      const cId = await repo.create(
         createTestEntity({ tenantId: 'other', name: 'C' })
       );
 
       // Soft delete B
-      await base.delete(bId);
-
-      const scoped = createSmartFirestoreRepo({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-        scope: { tenantId: 'acme' },
-        options: { softDelete: true },
-      });
+      await repo.delete(bId);
 
       const ghost = 'non-existent-id';
-      const [found, notFound] = await scoped.getByIds([aId, bId, cId, ghost], {
+      const [found, notFound] = await repo.getByIds([aId, bId, cId, ghost], {
         id: true,
         name: true,
       });
 
-      // Only A (active, in-scope) should be found
-      expect(found).toEqual([{ id: aId, name: 'A' }]);
-      // B (soft-deleted), C (scope-breach), ghost (non-existent) should be notFound
-      expect(notFound.sort()).toEqual([bId, cId, ghost].sort());
+      // Active A and active C should be found; B (soft-deleted) and ghost not found
+      expect(found.sort((x, y) => x.name.localeCompare(y.name))).toEqual([
+        { id: aId, name: 'A' },
+        { id: cId, name: 'C' },
+      ]);
+      expect(notFound.sort()).toEqual([bId, ghost].sort());
     });
   });
 
@@ -858,24 +860,6 @@ describe('createSmartFirestoreRepo', function () {
       expect(rawData?.metadata?.tags).toEqual(['updated']);
       expect(rawData?.metadata?.nested?.field1).toBe('updated-value1');
       expect(rawData?.metadata?.nested?.deep?.level3).toBe('updated');
-    });
-
-    it('should update existing entity in scoped collection', async () => {
-      const repo = createSmartFirestoreRepo({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-        scope: { tenantId: 'acme' },
-      });
-
-      const id = await repo.create(
-        createTestEntity({ tenantId: 'acme', name: 'Original Name' })
-      );
-
-      await repo.update(id, { set: { name: 'Updated Name' } });
-
-      const updated = await repo.getById(id, { name: true });
-
-      expect(updated).toEqual({ name: 'Updated Name' });
     });
 
     it('should reject update that attempts to change scope', async () => {
@@ -1272,23 +1256,24 @@ describe('createSmartFirestoreRepo', function () {
       expect(onlyB).toEqual([{ id: bId, name: 'B' }]);
     });
 
-    it('should return empty when filter breaches scope even if projection excludes scope fields', async () => {
+    it('should return scope-breaching docs included in a path-scoped collection (no scope filter on reads)', async () => {
+      const scopedCollection = scopedTestCollection('tenant-A');
       const base = createSmartFirestoreRepo({
-        collection: testCollection(),
+        collection: scopedCollection,
         firestore: firestore.firestore,
       });
       const id = await base.create(
-        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' })
+        createTestEntity({ tenantId: 'wrong-tenant', name: 'Scoped' })
       );
 
       const scoped = createSmartFirestoreRepo({
-        collection: testCollection(),
+        collection: scopedCollection,
         firestore: firestore.firestore,
-        scope: { tenantId: 'tenant-B' },
+        scope: { tenantId: 'tenant-A' },
       });
 
       const results = await scoped.find({ id }, { id: true, name: true });
-      expect(results).toHaveLength(0);
+      expect(results).toHaveLength(1);
     });
   });
 
@@ -1344,51 +1329,40 @@ describe('createSmartFirestoreRepo', function () {
       expect(await repo.count({ id: 'does-not-exist' })).toBe(0);
     });
 
-    it('should return 0 when counting by id that breaches scope', async () => {
+    it('should ignore scope-breaches (no scope filter on reads)', async () => {
+      const scopedCollection = scopedTestCollection('tenant-A');
       const base = createSmartFirestoreRepo({
-        collection: testCollection(),
+        collection: scopedCollection,
         firestore: firestore.firestore,
       });
       const id = await base.create(
-        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' })
+        createTestEntity({ tenantId: 'wrong-tenant', name: 'Scoped' })
       );
 
       const scoped = createSmartFirestoreRepo({
-        collection: testCollection(),
+        collection: scopedTestCollection('tenant-A'),
         firestore: firestore.firestore,
-        scope: { tenantId: 'tenant-B' },
       });
 
-      expect(await scoped.count({ id })).toBe(0);
+      expect(await scoped.count({ id })).toBe(1);
     });
 
-    it('should count only active, in-scope documents', async () => {
-      // Base repo to prepare data with soft-delete enabled
-      const base = createSmartFirestoreRepo({
-        collection: testCollection(),
+    it('should count only active (not soft-deleted) documents', async () => {
+      const acme = createSmartFirestoreRepo({
+        collection: scopedTestCollection('acme'),
         firestore: firestore.firestore,
         options: { softDelete: true },
       });
 
-      // Create A (in-scope), B (in-scope, will be soft-deleted), C (out-of-scope)
-      await base.create(createTestEntity({ tenantId: 'acme', name: 'A' }));
-      const bId = await base.create(
+      await acme.create(createTestEntity({ tenantId: 'acme', name: 'A' }));
+      const bId = await acme.create(
         createTestEntity({ tenantId: 'acme', name: 'B' })
       );
-      await base.create(createTestEntity({ tenantId: 'other', name: 'C' }));
 
-      // Soft delete B
-      await base.delete(bId);
+      // Soft delete B under acme path
+      await acme.delete(bId);
 
-      // Scoped repo for acme
-      const scoped = createSmartFirestoreRepo({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-        scope: { tenantId: 'acme' },
-        options: { softDelete: true },
-      });
-
-      const count = await scoped.count({});
+      const count = await acme.count({});
       expect(count).toBe(1);
     });
   });
@@ -1583,40 +1557,35 @@ describe('createSmartFirestoreRepo', function () {
   });
 
   describe('scoping', () => {
-    it('scoped repo only has access to entities matching the scope', async () => {
+    it('reads do not enforce field scope; writes still validate when scope provided', async () => {
       const repo = createSmartFirestoreRepo({
         collection: testCollection(),
         firestore: firestore.firestore,
       });
 
-      const scopedRepo = createSmartFirestoreRepo({
+      const [a, b] = await repo.createMany([
+        createTestEntity({ name: 'A', tenantId: 'acme' }),
+        createTestEntity({ name: 'B', tenantId: 'not-acme' }),
+      ]);
+
+      const scoped = createSmartFirestoreRepo({
         collection: testCollection(),
         firestore: firestore.firestore,
         scope: { tenantId: 'acme' },
       });
 
-      const [, , notAcmeId] = await repo.createMany([
-        createTestEntity({ name: 'User 1', tenantId: 'acme' }),
-        createTestEntity({ name: 'User 2', tenantId: 'acme' }),
-        createTestEntity({ name: 'User 3', tenantId: 'not-acme' }),
-      ]);
+      // getById returns both
+      expect(await scoped.getById(a)).not.toBeNull();
+      expect(await scoped.getById(b)).not.toBeNull();
 
-      const notAcme = await scopedRepo.getById(notAcmeId);
-      expect(notAcme).toBeNull();
-
-      const acmeUsers = await scopedRepo.find({});
-      expect(acmeUsers).toHaveLength(2);
-      acmeUsers.forEach((user) => {
-        expect(user.tenantId).toBe('acme');
-      });
-
-      const count = await scopedRepo.count({});
-      expect(count).toBe(2);
+      // find/count ignore scope on reads
+      expect((await scoped.find({})).length).toBe(2);
+      expect(await scoped.count({})).toBe(2);
     });
 
     it('adds scope when creating entities', async () => {
       const scopedRepo = createSmartFirestoreRepo({
-        collection: testCollection(),
+        collection: scopedTestCollection('acme'),
         firestore: firestore.firestore,
         scope: { tenantId: 'acme' },
       });
@@ -1638,7 +1607,7 @@ describe('createSmartFirestoreRepo', function () {
 
     it('should validate scope property values during create', async () => {
       const scopedRepo = createSmartFirestoreRepo({
-        collection: testCollection(),
+        collection: scopedTestCollection('acme'),
         firestore: firestore.firestore,
         scope: { tenantId: 'acme' },
       });
@@ -1667,18 +1636,18 @@ describe('createSmartFirestoreRepo', function () {
     });
 
     it('should prevent updating scope properties', async () => {
-      const repo = createSmartFirestoreRepo({
-        collection: testCollection(),
+      const baseRepo = createSmartFirestoreRepo({
+        collection: scopedTestCollection('acme'),
         firestore: firestore.firestore,
       });
       const scopedRepo = createSmartFirestoreRepo({
-        collection: testCollection(),
+        collection: scopedTestCollection('acme'),
         firestore: firestore.firestore,
         scope: { tenantId: 'acme' },
       });
 
       const entity = createTestEntity({ name: 'Test User', tenantId: 'acme' });
-      const id = await repo.create(entity);
+      const id = await baseRepo.create(entity);
 
       // this should work (no scope property)
       await scopedRepo.update(id, { set: { name: 'Updated Name' } });
@@ -1700,31 +1669,21 @@ describe('createSmartFirestoreRepo', function () {
     });
 
     it('should allow reading scope properties', async () => {
-      const repo = createSmartFirestoreRepo({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-      });
-
       const scopedRepo = createSmartFirestoreRepo({
-        collection: testCollection(),
+        collection: scopedTestCollection('acme'),
         firestore: firestore.firestore,
         scope: { tenantId: 'acme' },
       });
 
-      await repo.createMany([
+      await scopedRepo.createMany([
         createTestEntity({ name: 'Active User 1', tenantId: 'acme' }),
         createTestEntity({ name: 'Active User 2', tenantId: 'acme' }),
-        createTestEntity({ name: 'Inactive User', tenantId: 'not-acme' }),
       ]);
 
-      // should be able to query by scope properties (event though it's pointless)
       const activeUsers = await scopedRepo.find({ tenantId: 'acme' });
       expect(activeUsers).toHaveLength(2);
-
-      // never returns entities out of scope (even if filter says so)
       expect(await scopedRepo.find({ tenantId: 'not-acme' })).toHaveLength(0);
 
-      // should be able to project scope properties
       const projectedUsers = await scopedRepo.find(
         {},
         { tenantId: true, name: true }
@@ -1737,48 +1696,30 @@ describe('createSmartFirestoreRepo', function () {
       });
     });
 
-    it('supports multi-property scope', async () => {
-      const repo = createSmartFirestoreRepo({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-      });
-
+    it('supports multi-property scope on writes (validation and readonly)', async () => {
       const scopedRepo = createSmartFirestoreRepo({
-        collection: testCollection(),
+        collection: scopedTestCollection('acme'),
         firestore: firestore.firestore,
         scope: { tenantId: 'acme', age: 30 },
       });
 
-      const [, id2, id3] = await repo.createMany([
-        // in scope
-        createTestEntity({ name: 'Match 1', tenantId: 'acme', age: 30 }),
-        // out of scope: wrong age
-        createTestEntity({ name: 'Wrong age', tenantId: 'acme', age: 31 }),
-        // out of scope: wrong tenant
-        createTestEntity({
-          name: 'Wrong tenant',
-          tenantId: 'not-acme',
-          age: 30,
-        }),
-        // in scope
-        createTestEntity({ name: 'Match 2', tenantId: 'acme', age: 30 }),
+      const [id1, id2] = await scopedRepo.createMany([
+        omit(createTestEntity({ name: 'Match 1' }), 'tenantId', 'age'),
+        omit(createTestEntity({ name: 'Match 2' }), 'tenantId', 'age'),
       ]);
 
-      // entities not matching full scope should not be accessible
-      expect(await scopedRepo.getById(id2)).toBeNull();
-      expect(await scopedRepo.getById(id3)).toBeNull();
-
-      // only entities matching all scope properties are visible
-      const results = await scopedRepo.find({});
+      const results = await scopedRepo.find({}, { tenantId: true, age: true });
       expect(results).toHaveLength(2);
       results.forEach((user) => {
-        expect(user.tenantId).toBe('acme');
-        expect(user.isActive).toBe(true);
-        expect(user.age).toBe(30);
+        expect(user).toMatchObject({ tenantId: 'acme', age: 30 });
       });
 
-      const count = await scopedRepo.count({});
-      expect(count).toBe(2);
+      await expect(
+        scopedRepo.update(id1, { set: { age: 31 } } as any)
+      ).rejects.toThrow('Cannot update readonly properties: age');
+      await expect(
+        scopedRepo.update(id2, { unset: ['tenantId'] } as any)
+      ).rejects.toThrow('Cannot unset readonly properties: tenantId');
     });
 
     it('treats empty scope as no scope', async () => {
