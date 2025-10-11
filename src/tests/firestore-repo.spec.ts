@@ -2193,6 +2193,46 @@ describe('createSmartFirestoreRepo', function () {
       expect(retrieved.updatedAt).toBeInstanceOf(Date);
     });
   });
+
+  describe('id generation', () => {
+    it('should use custom id generation', async () => {
+      let counter = 0;
+      const customGenerateId = () => `fs-custom-${++counter}`;
+
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: {
+          generateId: customGenerateId,
+        },
+      });
+
+      const id1 = await repo.create(createTestEntity({ name: 'Custom 1' }));
+      const id2 = await repo.create(createTestEntity({ name: 'Custom 2' }));
+
+      expect(id1).toBe('fs-custom-1');
+      expect(id2).toBe('fs-custom-2');
+
+      const got1 = await repo.getById(id1);
+      const got2 = await repo.getById(id2);
+      expect(got1?.id).toBe('fs-custom-1');
+      expect(got2?.id).toBe('fs-custom-2');
+    });
+
+    it('should default to server-generated ids', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'Server ID' }));
+      expect(typeof id).toBe('string');
+      expect(id.length).toBeGreaterThan(0);
+
+      const got = await repo.getById(id);
+      expect(got?.id).toBe(id);
+    });
+  });
 });
 
 // Test Entity type and helper function (same as MongoDB tests)
