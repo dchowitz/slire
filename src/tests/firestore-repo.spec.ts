@@ -2174,6 +2174,125 @@ describe('createSmartFirestoreRepo', function () {
       expect(got?.id).toBe(id);
     });
   });
+
+  describe('version counter', () => {
+    it('should increment version with hidden field when version: true', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { version: true },
+      });
+
+      const id = await repo.create(createTestEntity({ name: 'Version Test' }));
+
+      // check initial version in raw document
+      const raw1 = await rawTestCollection().doc(id).get();
+      expect(raw1.data()).toHaveProperty('_version', 1);
+
+      // update and check version increment
+      await repo.update(id, { set: { name: 'Updated' } });
+      const raw2 = await rawTestCollection().doc(id).get();
+      expect(raw2.data()).toHaveProperty('_version', 2);
+
+      // entity should not include hidden version field
+      const retrieved = await repo.getById(id);
+      expect(retrieved).not.toHaveProperty('_version');
+    });
+
+    it('should increment version with entity field when version key is configured', async () => {
+      type VersionedEntity = TestEntity & {
+        version: number;
+      };
+
+      const repo = createSmartFirestoreRepo<VersionedEntity>({
+        collection: firestore.firestore.collection(
+          COLLECTION_NAME
+        ) as CollectionReference<VersionedEntity>,
+        firestore: firestore.firestore,
+        options: { version: 'version' },
+      });
+
+      const entity = createTestEntity({ name: 'Entity Version Test' }) as any;
+      const id = await repo.create(entity);
+
+      // check initial version
+      const retrieved1 = await repo.getById(id);
+      expect(retrieved1).toHaveProperty('version', 1);
+
+      // update and check version increment
+      await repo.update(id, { set: { name: 'Updated Entity' } });
+      const retrieved2 = await repo.getById(id);
+      expect(retrieved2).toHaveProperty('version', 2);
+    });
+
+    it('should increment version on soft delete', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { version: true, softDelete: true },
+      });
+
+      const id = await repo.create(
+        createTestEntity({ name: 'Delete Version Test' })
+      );
+
+      // check initial version
+      const raw1 = await rawTestCollection().doc(id).get();
+      expect(raw1.data()).toHaveProperty('_version', 1);
+
+      // soft delete and check version increment
+      await repo.delete(id);
+      const raw2 = await rawTestCollection().doc(id).get();
+      expect(raw2.data()).toHaveProperty('_version', 2);
+      expect(raw2.data()).toHaveProperty('_deleted', true);
+    });
+
+    it('should work with bulk operations', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { version: true },
+      });
+
+      const ids = await repo.createMany([
+        createTestEntity({ name: 'Bulk 1' }),
+        createTestEntity({ name: 'Bulk 2' }),
+        createTestEntity({ name: 'Bulk 3' }),
+      ]);
+
+      for (const id of ids) {
+        const raw = await rawTestCollection().doc(id).get();
+        expect(raw.data()).toHaveProperty('_version', 1);
+      }
+
+      await repo.updateMany(ids, { set: { name: 'Updated Bulk' } });
+
+      for (const id of ids) {
+        const raw = await rawTestCollection().doc(id).get();
+        expect(raw.data()).toHaveProperty('_version', 2);
+      }
+    });
+
+    it('should not interfere when version is disabled', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      const id = await repo.create(
+        createTestEntity({ name: 'No Version Test' })
+      );
+
+      // should not have version field
+      const raw = await rawTestCollection().doc(id).get();
+      expect(raw.data()).not.toHaveProperty('_version');
+
+      // update should still work without version
+      await repo.update(id, { set: { name: 'Updated No Version' } });
+      const raw2 = await rawTestCollection().doc(id).get();
+      expect(raw2.data()).not.toHaveProperty('_version');
+    });
+  });
 });
 
 // Test Entity type and helper function (same as MongoDB tests)
