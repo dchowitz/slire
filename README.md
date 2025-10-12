@@ -668,7 +668,7 @@ The Firestore implementation follows a more opinionated approach to play to Fire
 
 ### Design assumptions
 
-- Path‑scoped collections (recommended): Model multi‑tenancy/scope hierarchically in the document path, e.g. `organizations/{orgId}/users`. Instantiate the repository with the already scoped `collection` and the matching `scope`. Queries don’t add scope filters – the path enforces scope. Scope checks still protect writes from accidentally crossing scope boundaries.
+- Path‑scoped collections (recommended): Model multi‑tenancy/scope hierarchically in the document path, e.g. `organizations/{orgId}/users`. Instantiate the repository with the already scoped `collection`. Passing a `scope` is optional and is used for write‑time validation only (and to mark scope fields as readonly for updates). Reads never add scope filters – the path enforces scope. If you use a non‑scoped collection, reads will include any matching documents regardless of scope.
 - Soft delete uses a boolean flag: Documents are created with `_deleted: false`. Soft deletes set `_deleted: true`. Reads/counts filter by `_deleted == false`.
 - Identity: `id` maps to `doc.id` (string). The `idKey`/`mirrorId` options behave as in the Mongo section (id exposed via `idKey`, optionally mirrored in the document).
 
@@ -681,7 +681,7 @@ function createUserRepo(db: Firestore, orgId: string) {
   return createSmartFirestoreRepo<User>({
     collection: db.collection(`organizations/${orgId}/users`) as any,
     firestore: db,
-    scope: { organizationId: orgId }, // validated on writes only
+    scope: { organizationId: orgId }, // optional; validated on writes only (not applied to reads)
     options: { softDelete: true }, // writes _deleted: false and filters on _deleted == false
   });
 }
@@ -691,7 +691,7 @@ function createUserRepo(db: Firestore, orgId: string) {
 
 - getById / getByIds
 
-  - Access documents by path (no scope filters). If soft delete is enabled and the document has `_deleted: true`, return `null` / exclude from results.
+  - Access documents by path (no scope filters at read time, regardless of configured `scope`). If soft delete is enabled and the document has `_deleted: true`, return `null` / exclude from results.
 
 - create / createMany
 
@@ -707,10 +707,10 @@ function createUserRepo(db: Firestore, orgId: string) {
 
 - find / findBySpec
 
-  - Build queries from the caller’s filter (no scope filters). When soft delete is enabled, add a server‑side `where('_deleted', '==', false)` to exclude soft‑deleted documents.
+  - Build queries from the caller’s filter (no scope filters, even if a `scope` was configured). When soft delete is enabled, add a server‑side `where('_deleted', '==', false)` to exclude soft‑deleted documents.
 
 - count / countBySpec
-  - Use Firestore’s count aggregation on the same filter as `find`, including `_deleted == false` when soft delete is enabled (no need to fetch documents).
+  - Use Firestore’s count aggregation on the same filter as `find`, including `_deleted == false` when soft delete is enabled (no need to fetch documents). As with reads, `scope` is not applied at count time.
 
 ### Indexing notes
 
