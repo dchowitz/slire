@@ -2598,6 +2598,148 @@ describe('createSmartFirestoreRepo', function () {
       ).toBe(true);
     });
   });
+
+  describe('configuration validation', () => {
+    it('should throw error when timestamp keys are duplicated', () => {
+      expect(() => {
+        createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: {
+            traceTimestamps: true,
+            timestampKeys: {
+              createdAt: 'timestamp',
+              updatedAt: 'timestamp', // duplicate
+              deletedAt: 'anotherField',
+            },
+          } as any,
+        });
+      }).toThrow(
+        'Duplicate keys found in repository configuration: timestamp. ' +
+          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
+      );
+    });
+
+    it('should throw error when version key conflicts with timestamp key', () => {
+      expect(() => {
+        createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: {
+            traceTimestamps: true,
+            timestampKeys: {
+              createdAt: 'sharedKey',
+              updatedAt: 'updatedAt',
+              deletedAt: 'deletedAt',
+            },
+            version: 'sharedKey', // conflicts with createdAt
+          } as any,
+        });
+      }).toThrow(
+        'Duplicate keys found in repository configuration: sharedKey. ' +
+          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
+      );
+    });
+
+    it('should throw error when soft delete key conflicts with other keys', () => {
+      expect(() => {
+        createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: {
+            softDelete: true,
+            traceTimestamps: true,
+            timestampKeys: {
+              createdAt: 'createdAt',
+              updatedAt: '_deleted', // conflicts with soft delete key
+              deletedAt: 'deletedAt',
+            },
+          } as any,
+        });
+      }).toThrow(
+        'Duplicate keys found in repository configuration: _deleted. ' +
+          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
+      );
+    });
+
+    it('should not throw error when all keys are unique', () => {
+      expect(() => {
+        createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: {
+            softDelete: true,
+            traceTimestamps: true,
+            timestampKeys: {
+              createdAt: 'created',
+              updatedAt: 'updated',
+              deletedAt: 'deleted',
+            },
+            version: 'version',
+          } as any,
+        });
+      }).not.toThrow();
+    });
+
+    it('should throw when scope contains readonly fields', () => {
+      type EntityWithReadonlyFields = TestEntity & {
+        created: Date;
+        _v: number;
+      };
+      expect(() =>
+        createSmartFirestoreRepo<EntityWithReadonlyFields>({
+          collection: firestore.firestore.collection(
+            COLLECTION_NAME
+          ) as CollectionReference<EntityWithReadonlyFields>,
+          firestore: firestore.firestore,
+          options: {
+            softDelete: true,
+            timestampKeys: { createdAt: 'created' },
+            version: '_v',
+          },
+          scope: {
+            _v: 1 as any,
+            _deleted: true as any,
+            created: new Date(),
+            _updatedAt: new Date() as any,
+          } as any,
+        })
+      ).toThrow(
+        'Readonly fields found in scope: _v, _deleted, created, _updatedAt'
+      );
+    });
+
+    it('should throw when bounded trace strategy is configured (not supported in Firestore)', () => {
+      expect(() => {
+        createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: {
+            traceTimestamps: true,
+            traceStrategy: 'bounded',
+            traceLimit: 5,
+          } as any,
+          // Trace must be enabled for validation to run
+          traceContext: { userId: 'tester' },
+        });
+      }).toThrow('Firestore does not support "bounded" trace strategy');
+    });
+
+    it('should allow latest and unbounded trace strategies', () => {
+      expect(() => {
+        createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { traceStrategy: 'latest' } as any,
+        });
+        createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { traceStrategy: 'unbounded' } as any,
+        });
+      }).not.toThrow();
+    });
+  });
 });
 
 // Test Entity type and helper function (same as MongoDB tests)
