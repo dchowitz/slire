@@ -2293,6 +2293,129 @@ describe('createSmartFirestoreRepo', function () {
       expect(raw2.data()).not.toHaveProperty('_version');
     });
   });
+
+  describe('advanced operations', () => {
+    it('buildUpdateOperation sets timestamps', async () => {
+      let t = new Date('2025-01-01T00:00:00.000Z');
+      const clock = () => t;
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { traceTimestamps: clock },
+      });
+
+      const [id1, id2, id3] = await repo.createMany(
+        range(0, 3).map((_) => createTestEntity())
+      );
+
+      t = new Date('2025-01-01T00:00:01.000Z');
+
+      const batch = firestore.firestore.batch();
+      const updates = [
+        { id: id1, set: { name: 'Updated1' } },
+        { id: id2, set: { name: 'Updated2' } },
+        { id: id3, set: { name: 'Updated3' } },
+      ];
+      for (const u of updates) {
+        const ref = rawTestCollection().doc(u.id);
+        batch.update(ref, repo.buildUpdateOperation(u));
+      }
+      await batch.commit();
+
+      const raw1 = convertFirestoreTimestamps(
+        (await rawTestCollection().doc(id1).get()).data()
+      );
+      const raw2 = convertFirestoreTimestamps(
+        (await rawTestCollection().doc(id2).get()).data()
+      );
+      const raw3 = convertFirestoreTimestamps(
+        (await rawTestCollection().doc(id3).get()).data()
+      );
+
+      expect(raw1).toMatchObject({ name: 'Updated1', _updatedAt: t });
+      expect(raw2).toMatchObject({ name: 'Updated2', _updatedAt: t });
+      expect(raw3).toMatchObject({ name: 'Updated3', _updatedAt: t });
+    });
+
+    it('buildUpdateOperation prevents writing read-only props (runtime)', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { version: true, softDelete: true, traceTimestamps: true },
+      });
+
+      // readonly system fields
+      expect(() =>
+        repo.buildUpdateOperation({ set: { _createdAt: new Date() } as any })
+      ).toThrow('Cannot update readonly properties: _createdAt');
+      expect(() =>
+        repo.buildUpdateOperation({ unset: ['_deleted'] as any })
+      ).toThrow('Cannot unset readonly properties: _deleted');
+
+      // scope properties become readonly on update when scope configured
+      const scoped = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        scope: { tenantId: 'acme' },
+      });
+      expect(() =>
+        scoped.buildUpdateOperation({ set: { tenantId: 'x' } as any })
+      ).toThrow('Cannot update readonly properties: tenantId');
+      expect(() =>
+        scoped.buildUpdateOperation({ unset: ['tenantId'] as any })
+      ).toThrow('Cannot unset readonly properties: tenantId');
+    });
+
+    it('applyConstraints excludes soft-deleted documents', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      const [, b] = await repo.createMany([
+        createTestEntity({ name: 'A' }),
+        createTestEntity({ name: 'B' }),
+      ]);
+      // soft delete B
+      await repo.delete(b);
+
+      const q = repo.applyConstraints(
+        repo.collection.where('name', 'in', ['A', 'B'])
+      );
+      const snap = await (q as any).get();
+      const names = snap.docs.map((d: any) => d.data().name);
+      expect(names).toEqual(['A']);
+    });
+
+    it('applyConstraints does not add scope filters (reads ignore scope)', async () => {
+      const base = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      // create documents without scope so one breaches the would-be scope
+      await base.createMany([
+        createTestEntity({ name: 'A', tenantId: 'acme' }),
+        createTestEntity({ name: 'B', tenantId: 'not-acme' }),
+      ]);
+
+      const scoped = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        scope: { tenantId: 'acme' },
+        options: { softDelete: true },
+      });
+
+      const q = scoped.applyConstraints(
+        scoped.collection.where('name', 'in', ['A', 'B'])
+      );
+      const snap = await (q as any).get();
+      const names = snap.docs.map((d: any) => d.data().name).sort();
+      expect(names).toEqual(['A', 'B']);
+    });
+  });
 });
 
 // Test Entity type and helper function (same as MongoDB tests)
