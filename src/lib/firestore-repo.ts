@@ -342,7 +342,8 @@ export function createSmartFirestoreRepo<
     update: UpdateOperation<UpdateInput>,
     mergeTrace?: any
   ): Record<string, any> {
-    const { set, unset } = update;
+    const { set } = update;
+    const unset = update.unset ? [update.unset].flat() : undefined;
     const firestoreUpdate: Record<string, any> = {};
 
     if (set && unset) {

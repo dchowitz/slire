@@ -377,7 +377,8 @@ export function createSmartMongoRepo<
     update: UpdateOperation<UpdateInput>,
     mergeTrace?: any
   ): any {
-    const { set, unset } = update;
+    const { set } = update;
+    const unset = update.unset ? [update.unset].flat() : undefined;
     const mongoUpdate: any = {}; // cast to any due to MongoDB's complex UpdateFilter type system
 
     if (set && unset) {

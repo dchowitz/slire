@@ -824,6 +824,39 @@ describe('createSmartFirestoreRepo', function () {
       expect(data.metadata.tags).toEqual(['tag1', 'tag2']);
     });
 
+    it('should allow unsetting a single optional property as string (not array)', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      const entity = createTestEntity({
+        metadata: {
+          tags: ['tag1', 'tag2'],
+          notes: 'Some notes that will be unset',
+        },
+      });
+
+      const createdId = await repo.create(entity);
+
+      // Unset single optional property as string (not array)
+      await repo.update(createdId, {
+        unset: 'metadata.notes',
+      });
+
+      const updated = await repo.getById(createdId);
+      expect(updated).toBeDefined();
+      expect(updated!.metadata).toBeDefined();
+      expect(updated!.metadata?.tags).toEqual(['tag1', 'tag2']);
+      expect(updated!.metadata?.notes).toBeUndefined();
+
+      // Verify the raw document in Firestore
+      const raw = await rawTestCollection().doc(createdId).get();
+      const data = convertFirestoreTimestamps(raw.data());
+      expect(data.metadata.notes).toBeUndefined();
+      expect(data.metadata.tags).toEqual(['tag1', 'tag2']);
+    });
+
     it('should not affect non-existent entities', async () => {
       const repo = createSmartFirestoreRepo({
         collection: testCollection(),

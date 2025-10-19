@@ -85,8 +85,8 @@ export type SmartRepo<
 
 export type UpdateOperation<T> =
   | { set: Partial<T>; unset?: never }
-  | { set?: never; unset: OptionalPath<T>[] }
-  | { set: Partial<T>; unset: OptionalPath<T>[] };
+  | { set?: never; unset: OptionalPath<T> | OptionalPath<T>[] }
+  | { set: Partial<T>; unset: OptionalPath<T> | OptionalPath<T>[] };
 
 // Specification pattern types
 export type Specification<T> = {
