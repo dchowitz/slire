@@ -827,7 +827,7 @@ describe('createSmartMongoRepo', function () {
       const retrieved = await repo.getById(new ObjectId().toHexString());
       expect(retrieved).toBeUndefined();
 
-      const matched = await repo.find({ name: 'New Name' });
+      const matched = await repo.find({ name: 'New Name' }).toArray();
       expect(matched).toHaveLength(0);
     });
 
@@ -1111,7 +1111,7 @@ describe('createSmartMongoRepo', function () {
         createTestEntity({ tenantId: 'other' }),
       ] as any);
 
-      const results = await repo.find({ tenantId: 'other' });
+      const results = await repo.find({ tenantId: 'other' }).toArray();
       expect(results).toEqual([]);
     });
     it('should find entities matching the filter', async () => {
@@ -1127,13 +1127,13 @@ describe('createSmartMongoRepo', function () {
         createTestEntity({ name: 'David', age: 40, isActive: true }),
       ]);
 
-      const activeUsers = await repo.find({ isActive: true });
+      const activeUsers = await repo.find({ isActive: true }).toArray();
       expect(activeUsers).toHaveLength(3);
       activeUsers.forEach((user) => {
         expect(user.isActive).toBe(true);
       });
 
-      const youngUsers = await repo.find({ age: 25 }); // exact match only
+      const youngUsers = await repo.find({ age: 25 }).toArray(); // exact match only
       expect(youngUsers).toHaveLength(1);
       expect(youngUsers[0].name).toBe('Alice');
     });
@@ -1151,7 +1151,7 @@ describe('createSmartMongoRepo', function () {
         createTestEntity({ name: 'David', age: 40, isActive: true }),
       ]);
 
-      const all = await repo.find({});
+      const all = await repo.find({}).toArray();
       expect(all).toHaveLength(4);
     });
 
@@ -1163,7 +1163,7 @@ describe('createSmartMongoRepo', function () {
       const entity = createTestEntity({ name: 'Test Entity' });
       await repo.create(entity);
 
-      const results = await repo.find({ name: 'Non-existent' });
+      const results = await repo.find({ name: 'Non-existent' }).toArray();
       expect(results).toHaveLength(0);
     });
 
@@ -1174,9 +1174,9 @@ describe('createSmartMongoRepo', function () {
         scope: { tenantId: 'acme' },
       });
 
-      await expect(
+      expect(() =>
         repo.find({ tenantId: 'other' }, { onScopeBreach: 'error' })
-      ).rejects.toThrow('Scope breach detected in find filter');
+      ).toThrow('Scope breach detected in find filter');
     });
 
     it('should support projections', async () => {
@@ -1190,10 +1190,9 @@ describe('createSmartMongoRepo', function () {
         createTestEntity({ name: 'Charlie', age: 35, isActive: false }),
       ]);
 
-      const projectedUsers = await repo.find(
-        { isActive: true },
-        { projection: { name: true, age: true } }
-      );
+      const projectedUsers = await repo
+        .find({ isActive: true }, { projection: { name: true, age: true } })
+        .toArray();
 
       expect(sortBy(projectedUsers, (u) => u.name)).toEqual([
         { name: 'Alice', age: 25 },
@@ -1211,10 +1210,9 @@ describe('createSmartMongoRepo', function () {
         createTestEntity({ name: 'Bob', age: 30 }),
       ]);
 
-      const projectedUsers = await repo.find(
-        {},
-        { projection: { id: true, name: true } }
-      );
+      const projectedUsers = await repo
+        .find({}, { projection: { id: true, name: true } })
+        .toArray();
 
       expect(sortBy(projectedUsers, (u) => u.name)).toEqual([
         { name: 'Alice', id: createdIds[0] },
@@ -1230,10 +1228,12 @@ describe('createSmartMongoRepo', function () {
       const entity = createTestEntity({ name: 'Test Entity' });
       await repo.create(entity);
 
-      const results = await repo.find(
-        { name: 'Non-existent' },
-        { projection: { name: true, email: true } }
-      );
+      const results = await repo
+        .find(
+          { name: 'Non-existent' },
+          { projection: { name: true, email: true } }
+        )
+        .toArray();
       expect(results).toHaveLength(0);
     });
 
@@ -1248,14 +1248,13 @@ describe('createSmartMongoRepo', function () {
         createTestEntity({ name: 'B' }),
       ]);
 
-      const onlyA = await repo.find({ id: aId });
+      const onlyA = await repo.find({ id: aId }).toArray();
       expect(onlyA).toHaveLength(1);
       expect(onlyA[0].id).toBe(aId);
 
-      const onlyB = await repo.find(
-        { id: bId },
-        { projection: { id: true, name: true } }
-      );
+      const onlyB = await repo
+        .find({ id: bId }, { projection: { id: true, name: true } })
+        .toArray();
       expect(onlyB).toEqual([{ id: bId, name: 'B' }]);
     });
 
@@ -1274,10 +1273,18 @@ describe('createSmartMongoRepo', function () {
         scope: { tenantId: 'tenant-B' },
       });
 
-      const results = await scoped.find({ id }, {
-        id: true,
-        name: true,
-      } as any);
+      const results = await scoped
+        .find(
+          { id },
+          {
+            projection: {
+              id: true,
+              name: true,
+            },
+          }
+        )
+        .toArray();
+
       expect(results).toHaveLength(0);
     });
   });
@@ -1398,11 +1405,11 @@ describe('createSmartMongoRepo', function () {
         describe: 'users aged 25',
       };
 
-      const activeUsers = await repo.findBySpec(activeUsersSpec);
+      const activeUsers = await repo.findBySpec(activeUsersSpec).toArray();
       expect(activeUsers).toHaveLength(2);
       activeUsers.forEach((user) => expect(user.isActive).toBe(true));
 
-      const youngUsers = await repo.findBySpec(specificAgeSpec);
+      const youngUsers = await repo.findBySpec(specificAgeSpec).toArray();
       expect(youngUsers).toHaveLength(1);
       expect(youngUsers[0].name).toBe('Alice');
 
@@ -1431,9 +1438,11 @@ describe('createSmartMongoRepo', function () {
         describe: 'active users',
       };
 
-      const results = await repo.findBySpec(spec, {
-        projection: { id: true, name: true },
-      });
+      const results = await repo
+        .findBySpec(spec, {
+          projection: { id: true, name: true },
+        })
+        .toArray();
       expect(results).toHaveLength(1);
       expect(results[0]).toHaveProperty('id');
       expect(results[0]).toHaveProperty('name');
@@ -1465,7 +1474,7 @@ describe('createSmartMongoRepo', function () {
 
       const combinedSpec = combineSpecs(activeSpec, youngSpec);
 
-      const results = await repo.findBySpec(combinedSpec);
+      const results = await repo.findBySpec(combinedSpec).toArray();
       expect(results).toHaveLength(1);
       expect(results[0].name).toBe('Alice');
       expect(results[0].isActive).toBe(true);
@@ -1522,7 +1531,7 @@ describe('createSmartMongoRepo', function () {
         repository: SmartRepo<T>,
         spec: ApprovedSpecification<T>
       ): Promise<T[]> {
-        return repository.findBySpec(spec);
+        return repository.findBySpec(spec).toArray();
       }
 
       // Test approved specifications work
@@ -1568,7 +1577,7 @@ describe('createSmartMongoRepo', function () {
       const notAcme = await scopedRepo.getById(notAcmeId);
       expect(notAcme).toBeUndefined();
 
-      const acmeUsers = await scopedRepo.find({});
+      const acmeUsers = await scopedRepo.find({}).toArray();
       expect(acmeUsers).toHaveLength(2);
       acmeUsers.forEach((user) => {
         expect(user.tenantId).toBe('acme');
@@ -1682,17 +1691,18 @@ describe('createSmartMongoRepo', function () {
       ]);
 
       // should be able to query by scope properties (event though it's pointless)
-      const activeUsers = await scopedRepo.find({ tenantId: 'acme' });
+      const activeUsers = await scopedRepo.find({ tenantId: 'acme' }).toArray();
       expect(activeUsers).toHaveLength(2);
 
       // never returns entities out of scope (even if filter says so)
-      expect(await scopedRepo.find({ tenantId: 'not-acme' })).toHaveLength(0);
+      expect(
+        await scopedRepo.find({ tenantId: 'not-acme' }).toArray()
+      ).toHaveLength(0);
 
       // should be able to project scope properties
-      const projectedUsers = await scopedRepo.find(
-        {},
-        { projection: { tenantId: true, name: true } }
-      );
+      const projectedUsers = await scopedRepo
+        .find({}, { projection: { tenantId: true, name: true } })
+        .toArray();
       expect(projectedUsers).toHaveLength(2);
       projectedUsers.forEach((user) => {
         expect(user).toHaveProperty('tenantId');
@@ -1733,7 +1743,7 @@ describe('createSmartMongoRepo', function () {
       expect(await scopedRepo.getById(id3)).toBeUndefined();
 
       // only entities matching all scope properties are visible
-      const results = await scopedRepo.find({});
+      const results = await scopedRepo.find({}).toArray();
       expect(results).toHaveLength(2);
       results.forEach((user) => {
         expect(user.tenantId).toBe('acme');
@@ -1764,7 +1774,7 @@ describe('createSmartMongoRepo', function () {
       ]);
 
       // empty scope should not filter results
-      const allFromEmptyScope = await emptyScopedRepo.find({});
+      const allFromEmptyScope = await emptyScopedRepo.find({}).toArray();
       expect(allFromEmptyScope.map((u) => u.name).sort()).toEqual([
         'U1',
         'U2',
@@ -1847,7 +1857,7 @@ describe('createSmartMongoRepo', function () {
       const got = await repo.getById(id);
       expect(got).toHaveProperty('entityId', id);
 
-      const found = await repo.find({ entityId: id } as any);
+      const found = await repo.find({ entityId: id } as any).toArray();
       expect(found.map((e) => (e as any).entityId)).toEqual([id]);
 
       const proj = await repo.getById(id, {
@@ -1916,7 +1926,7 @@ describe('createSmartMongoRepo', function () {
 
       await repo.delete(b);
 
-      const foundAll = await repo.find({});
+      const foundAll = await repo.find({}).toArray();
       expect(foundAll.map((e) => e.name)).toEqual(
         expect.arrayContaining(['A', 'C'])
       );
@@ -1949,7 +1959,7 @@ describe('createSmartMongoRepo', function () {
 
       await repo.deleteMany([ids[0], ids[2]]);
 
-      const remaining = await repo.find({});
+      const remaining = await repo.find({}).toArray();
       expect(remaining.map((e) => e.name)).toEqual(['B']);
       const count = await repo.count({});
       expect(count).toBe(1);
@@ -2620,14 +2630,14 @@ describe('createSmartMongoRepo', function () {
           await txRepo.delete(createdIds[2]);
 
           // verify changes are visible within transaction
-          const remaining = await txRepo.find({});
+          const remaining = await txRepo.find({}).toArray();
           expect(remaining).toHaveLength(2);
           expect(remaining.find((e) => e.id === createdIds[0])?.age).toBe(99);
         });
       });
 
       // verify changes persisted after transaction
-      const finalEntities = await repo.find({});
+      const finalEntities = await repo.find({}).toArray();
       expect(finalEntities).toHaveLength(2);
       expect(finalEntities.some((e) => e.name === 'TX Entity 1')).toBe(true);
       expect(finalEntities.some((e) => e.name === 'TX Entity 2')).toBe(true);
@@ -2652,7 +2662,7 @@ describe('createSmartMongoRepo', function () {
         await txRepo.updateMany(createdIds, { set: { age: 40 } });
 
         // find and verify within transaction
-        const updated = await txRepo.find({ age: 40 });
+        const updated = await txRepo.find({ age: 40 }).toArray();
         expect(updated).toHaveLength(3);
 
         return { processedCount: updated.length, ids: createdIds };
@@ -2662,7 +2672,7 @@ describe('createSmartMongoRepo', function () {
       expect(result.processedCount).toBe(3);
 
       // verify changes persisted
-      const finalEntities = await repo.find({ age: 40 });
+      const finalEntities = await repo.find({ age: 40 }).toArray();
       expect(finalEntities).toHaveLength(3);
       expect(finalEntities.map((e) => e.name)).toEqual(
         expect.arrayContaining(['Run TX 1', 'Run TX 2', 'Run TX 3'])
@@ -2695,7 +2705,7 @@ describe('createSmartMongoRepo', function () {
             });
 
             // verify changes are visible within transaction
-            const entities = await txRepo.find({});
+            const entities = await txRepo.find({}).toArray();
             expect(entities).toHaveLength(3);
 
             // throw error to trigger rollback
@@ -2710,7 +2720,7 @@ describe('createSmartMongoRepo', function () {
       }
 
       // verify rollback - only initial entity should exist with original values
-      const finalEntities = await repo.find({});
+      const finalEntities = await repo.find({}).toArray();
       expect(finalEntities).toHaveLength(1);
       expect(finalEntities[0].name).toBe('Initial Entity');
     });
@@ -2740,7 +2750,7 @@ describe('createSmartMongoRepo', function () {
           await txRepo.delete(initialIds[0]);
 
           // verify changes within transaction
-          const remaining = await txRepo.find({});
+          const remaining = await txRepo.find({}).toArray();
           expect(remaining).toHaveLength(3); // 1 existing + 2 new
 
           // throw error to trigger rollback
@@ -2752,7 +2762,7 @@ describe('createSmartMongoRepo', function () {
       }
 
       // verify rollback - original state should be restored
-      const finalEntities = await repo.find({});
+      const finalEntities = await repo.find({}).toArray();
       expect(finalEntities).toHaveLength(2);
       expect(finalEntities.map((e) => e.name)).toEqual(
         expect.arrayContaining(['Existing 1', 'Existing 2'])
@@ -2776,7 +2786,7 @@ describe('createSmartMongoRepo', function () {
         ]);
 
         // find active entities
-        const activeEntities = await txRepo.find({ isActive: true });
+        const activeEntities = await txRepo.find({ isActive: true }).toArray();
         expect(activeEntities).toHaveLength(2);
 
         // create second batch based on first batch
@@ -2792,7 +2802,7 @@ describe('createSmartMongoRepo', function () {
         await txRepo.updateMany(batch1, { set: { age: 50 } });
 
         // final count
-        const allEntities = await txRepo.find({});
+        const allEntities = await txRepo.find({}).toArray();
 
         return {
           batch1Count: batch1.length,
@@ -2808,7 +2818,7 @@ describe('createSmartMongoRepo', function () {
       expect(result.activeCount).toBe(2);
 
       // verify final state
-      const finalEntities = await repo.find({});
+      const finalEntities = await repo.find({}).toArray();
       expect(finalEntities).toHaveLength(4);
       expect(finalEntities.filter((e) => e.age === 50)).toHaveLength(2);
     });
@@ -2831,7 +2841,7 @@ describe('createSmartMongoRepo', function () {
         ]);
 
         // verify entities are created with scope
-        const created = await txRepo.find({});
+        const created = await txRepo.find({}).toArray();
         expect(created).toHaveLength(2);
         expect(created.every((e) => e.tenantId === 'acme')).toBe(true);
 
@@ -2840,7 +2850,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       // verify through base repo
-      const allEntities = await baseRepo.find({});
+      const allEntities = await baseRepo.find({}).toArray();
       expect(allEntities).toHaveLength(2);
       expect(
         allEntities.every((e) => e.tenantId === 'acme' && e.age === 88)

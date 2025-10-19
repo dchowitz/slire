@@ -6,13 +6,87 @@ import {
 } from './repo-config';
 import { OptionalPath, Prettify } from './types';
 
-type FindOptions = {
+export type FindOptions = {
   onScopeBreach?: 'empty' | 'error';
 };
 
 export type CountOptions = {
   onScopeBreach?: 'zero' | 'error';
 };
+
+// Streaming query result - provides array and stream access
+export class QueryStream<T> {
+  private iterator: AsyncIterator<T>;
+
+  constructor(iterator: AsyncIterator<T>) {
+    this.iterator = iterator;
+  }
+
+  static fromIterator<T>(iterator: AsyncIterator<T>): QueryStream<T> {
+    return new QueryStream(iterator);
+  }
+
+  async toArray(): Promise<T[]> {
+    const results: T[] = [];
+    for await (const item of this) {
+      results.push(item);
+    }
+    return results;
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    return this.iterator;
+  }
+
+  take(limit: number): QueryStream<T> {
+    const iterator = this._take(limit);
+    return new QueryStream(iterator);
+  }
+
+  skip(offset: number): QueryStream<T> {
+    const iterator = this._skip(offset);
+    return new QueryStream(iterator);
+  }
+
+  paged(pageSize: number): QueryStream<T[]> {
+    const iterator = this._paged(pageSize);
+    return new QueryStream(iterator);
+  }
+
+  private async *_take(limit: number): AsyncGenerator<T> {
+    let count = 0;
+    for await (const item of this) {
+      if (count >= limit) break;
+      yield item;
+      count++;
+    }
+  }
+
+  private async *_skip(offset: number): AsyncGenerator<T> {
+    let count = 0;
+    for await (const item of this) {
+      if (count >= offset) {
+        yield item;
+      }
+      count++;
+    }
+  }
+
+  private async *_paged(pageSize: number): AsyncGenerator<T[]> {
+    let currentPage: T[] = [];
+    for await (const item of this) {
+      currentPage.push(item);
+      if (currentPage.length >= pageSize) {
+        yield currentPage;
+        currentPage = [];
+      }
+    }
+    // Yield final partial page if any
+    if (currentPage.length > 0) {
+      yield currentPage;
+    }
+  }
+}
 
 // database-agnostic interface (limited to simple CRUD operations)
 export type SmartRepo<
@@ -62,19 +136,19 @@ export type SmartRepo<
   delete(id: string, options?: { mergeTrace?: any }): Promise<void>;
   deleteMany(ids: string[], options?: { mergeTrace?: any }): Promise<void>;
 
-  find(filter: Partial<T>, options?: FindOptions): Promise<T[]>;
+  find(filter: Partial<T>, options?: FindOptions): QueryStream<T>;
   find<P extends Projection<T>>(
     filter: Partial<T>,
     options: FindOptions & { projection: P }
-  ): Promise<Projected<T, P>[]>;
+  ): QueryStream<Projected<T, P>>;
   findBySpec<S extends Specification<T>>(
     spec: S,
     options?: FindOptions
-  ): Promise<T[]>;
+  ): QueryStream<T>;
   findBySpec<S extends Specification<T>, P extends Projection<T>>(
     spec: S,
     options: FindOptions & { projection: P }
-  ): Promise<Projected<T, P>[]>;
+  ): QueryStream<Projected<T, P>>;
 
   count(filter: Partial<T>, options?: CountOptions): Promise<number>;
   countBySpec<S extends Specification<T>>(

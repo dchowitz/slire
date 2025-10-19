@@ -21,6 +21,7 @@ import {
 } from './repo-config';
 import {
   CreateManyPartialFailure,
+  QueryStream,
   SmartRepo,
   Specification,
   UpdateOperation,
@@ -654,19 +655,24 @@ export function createSmartFirestoreRepo<
       }
     },
 
-    find: async <P extends Projection<T>>(
+    find: <P extends Projection<T>>(
       filter: Partial<T>,
       options?: { projection?: P; onScopeBreach?: 'empty' | 'error' }
-    ): Promise<Projected<T, P>[]> => {
-      let query: Query = collection;
-
+    ): QueryStream<Projected<T, P>> => {
       if (config.scopeBreach(filter)) {
         const mode = options?.onScopeBreach ?? 'empty';
         if (mode === 'error') {
           throw new Error('Scope breach detected in find filter');
         }
-        return [];
+        // Return empty stream
+        return QueryStream.fromIterator(
+          (async function* () {
+            // Empty generator
+          })()
+        );
       }
+
+      let query: Query = collection;
 
       // Apply filter constraints (map idKey to documentId)
       for (const [key, value] of Object.entries(filter)) {
@@ -696,26 +702,28 @@ export function createSmartFirestoreRepo<
         }
       }
 
-      const snapshot = await query.get();
-      const results: Projected<T, P>[] = [];
+      // Create async generator that yields transformed documents
+      const generator = async function* () {
+        const snapshot = await query.get();
 
-      for (const doc of snapshot.docs) {
-        if (!doc.exists) {
-          continue;
+        for (const doc of snapshot.docs) {
+          if (!doc.exists) {
+            continue;
+          }
+          const result = fromFirestoreDoc(doc, options?.projection);
+          if (result) {
+            yield result;
+          }
         }
-        const result = fromFirestoreDoc(doc, options?.projection);
-        if (result) {
-          results.push(result);
-        }
-      }
+      };
 
-      return results;
+      return QueryStream.fromIterator(generator());
     },
 
-    findBySpec: async <P extends Projection<T>>(
+    findBySpec: <P extends Projection<T>>(
       spec: Specification<T>,
       options?: { projection?: P; onScopeBreach?: 'empty' | 'error' }
-    ): Promise<Projected<T, P>[]> => {
+    ): QueryStream<Projected<T, P>> => {
       return repo.find<P>(spec.toFilter(), options as any);
     },
 

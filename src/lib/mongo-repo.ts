@@ -10,6 +10,7 @@ import {
 } from './repo-config';
 import {
   CreateManyPartialFailure,
+  QueryStream,
   SmartRepo,
   Specification,
   UpdateOperation,
@@ -80,6 +81,7 @@ export type MongoRepo<
  * ```
  *
  */
+
 export function createSmartMongoRepo<
   T extends { id: string },
   Scope extends Partial<T> = {},
@@ -618,16 +620,21 @@ export function createSmartMongoRepo<
       }
     },
 
-    find: async <P extends Projection<T> | undefined>(
+    find: <P extends Projection<T> | undefined>(
       filter: Partial<T>,
       options?: { projection?: P; onScopeBreach?: 'empty' | 'error' }
-    ): Promise<Projected<T, P>[]> => {
+    ): QueryStream<Projected<T, P>> => {
       if (config.scopeBreach(filter)) {
         const mode = options?.onScopeBreach ?? 'empty';
         if (mode === 'error') {
           throw new Error('Scope breach detected in find filter');
         }
-        return [];
+        // Return empty stream
+        return QueryStream.fromIterator(
+          (async function* () {
+            // Empty generator
+          })()
+        );
       }
 
       const mongoFilter = convertFilter(filter);
@@ -640,24 +647,35 @@ export function createSmartMongoRepo<
           )
         : undefined;
 
-      const docs = await collection
-        .find(
-          applyConstraints(mongoFilter),
-          withSessionOptions(
-            mongoProjection ? { projection: mongoProjection } : undefined
-          )
+      const cursor = collection.find(
+        applyConstraints(mongoFilter),
+        withSessionOptions(
+          mongoProjection ? { projection: mongoProjection } : undefined
         )
-        .toArray();
+      );
 
-      return docs.map((doc) =>
-        fromMongoDoc<P>(doc, options?.projection as P)
-      ) as unknown as Projected<T, P>[];
+      // Create async generator that yields transformed documents
+      const generator = async function* () {
+        try {
+          while (await cursor.hasNext()) {
+            const doc = await cursor.next();
+            yield fromMongoDoc<P>(doc, options?.projection as P) as Projected<
+              T,
+              P
+            >;
+          }
+        } finally {
+          await cursor.close();
+        }
+      };
+
+      return QueryStream.fromIterator(generator());
     },
 
-    findBySpec: async <P extends Projection<T>>(
+    findBySpec: <P extends Projection<T>>(
       spec: Specification<T>,
       options?: { projection?: P; onScopeBreach?: 'empty' | 'error' }
-    ): Promise<Projected<T, P>[]> => {
+    ): QueryStream<Projected<T, P>> => {
       return repo.find<P>(spec.toFilter(), options as any);
     },
 
