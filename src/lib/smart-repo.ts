@@ -3,9 +3,8 @@ import {
   Projected,
   Projection,
   RepositoryConfig,
-  UpdateOperation,
 } from './repo-config';
-import { Prettify } from './types';
+import { OptionalPath, Prettify } from './types';
 
 type FindOptions = {
   onScopeBreach?: 'empty' | 'error';
@@ -51,12 +50,12 @@ export type SmartRepo<
 
   update(
     id: string,
-    update: UpdateOperation<Prettify<UpdateInput>>,
+    update: UpdateOperation<UpdateInput>,
     options?: { mergeTrace?: any }
   ): Promise<void>;
   updateMany(
     ids: string[],
-    update: UpdateOperation<Prettify<UpdateInput>>,
+    update: UpdateOperation<UpdateInput>,
     options?: { mergeTrace?: any }
   ): Promise<void>;
 
@@ -83,6 +82,11 @@ export type SmartRepo<
     options?: CountOptions
   ): Promise<number>;
 };
+
+export type UpdateOperation<T> =
+  | { set: Partial<T>; unset?: never }
+  | { set?: never; unset: OptionalPath<T>[] }
+  | { set: Partial<T>; unset: OptionalPath<T>[] };
 
 // Specification pattern types
 export type Specification<T> = {

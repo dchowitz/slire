@@ -2,7 +2,6 @@ import {
   DateKeys,
   NumberKeys,
   ObjectKeys,
-  OptionalKeys,
   Prettify,
   StringKeys,
 } from './types';
@@ -23,11 +22,6 @@ export type TimestampConfig<T> = {
   updatedAt?: DateKeys<T>;
   deletedAt?: DateKeys<T>;
 };
-
-export type UpdateOperation<T> =
-  | { set: Partial<T>; unset?: never }
-  | { set?: never; unset: OptionalKeys<T>[] }
-  | { set: Partial<T>; unset: OptionalKeys<T>[] };
 
 export type RepositoryConfig<T> = {
   // Identity configuration

@@ -17,13 +17,13 @@ import {
   Projection,
   repoConfig,
   RepositoryConfig,
-  UpdateOperation,
   WriteOp,
 } from './repo-config';
 import {
   CreateManyPartialFailure,
   SmartRepo,
   Specification,
+  UpdateOperation,
 } from './smart-repo';
 import { Prettify } from './types';
 
@@ -365,8 +365,8 @@ export function createSmartFirestoreRepo<
 
     if (unset) {
       config.validateNoReadonly(unset.map(String), 'unset');
-      for (const key of unset) {
-        firestoreUpdate[String(key)] = FieldValue.delete();
+      for (const keyOrPath of unset) {
+        firestoreUpdate[String(keyOrPath)] = FieldValue.delete();
       }
     }
 

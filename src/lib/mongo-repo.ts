@@ -6,13 +6,13 @@ import {
   Projection,
   repoConfig,
   RepositoryConfig,
-  UpdateOperation,
   WriteOp,
 } from './repo-config';
 import {
   CreateManyPartialFailure,
   SmartRepo,
   Specification,
+  UpdateOperation,
 } from './smart-repo';
 import { Prettify } from './types';
 
@@ -400,8 +400,8 @@ export function createSmartMongoRepo<
 
     if (unset) {
       config.validateNoReadonly(unset.map(String), 'unset');
-      mongoUpdate.$unset = unset.reduce((acc, key) => {
-        acc[String(key)] = '';
+      mongoUpdate.$unset = unset.reduce((acc, keyOrPath) => {
+        acc[String(keyOrPath)] = '';
         return acc;
       }, {} as Record<string, string>);
     }

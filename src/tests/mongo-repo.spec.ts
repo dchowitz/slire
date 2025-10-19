@@ -745,6 +745,40 @@ describe('createSmartMongoRepo', function () {
       expect(updated).not.toHaveProperty('metadata');
     });
 
+    it('should allow unsetting nested optional properties using dot notation', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+
+      const entity = createTestEntity({
+        metadata: {
+          tags: ['tag1', 'tag2'],
+          notes: 'Some notes that will be unset',
+        },
+      });
+
+      const createdId = await repo.create(entity);
+
+      // Unset nested optional property using dot notation
+      await repo.update(createdId, {
+        unset: ['metadata.notes'],
+      });
+
+      const updated = await repo.getById(createdId);
+      expect(updated).toBeDefined();
+      expect(updated!.metadata).toBeDefined();
+      expect(updated!.metadata?.tags).toEqual(['tag1', 'tag2']);
+      expect(updated!.metadata?.notes).toBeUndefined();
+
+      // Verify the raw document in MongoDB
+      const rawDoc = await rawTestCollection().findOne({
+        _id: new ObjectId(createdId),
+      });
+      expect(rawDoc.metadata.notes).toBeUndefined();
+      expect(rawDoc.metadata.tags).toEqual(['tag1', 'tag2']);
+    });
+
     it('should not affect non-existent entities', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),

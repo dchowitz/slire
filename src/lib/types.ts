@@ -46,3 +46,56 @@ export type StringKeys<T> = {
     : never;
 }[keyof T] &
   string;
+
+// Nested path typing helpers (depth-limited recursive) for optional leaves
+
+// Treat these as primitives for path derivation
+export type Primitive =
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined
+  | Date
+  | RegExp;
+
+// Depth-limited recursive optional leaf paths (max depth 4)
+// Includes both root optional keys and nested paths where the leaf property is optional
+
+type Decrease<D> = D extends 4
+  ? 3
+  : D extends 3
+  ? 2
+  : D extends 2
+  ? 1
+  : D extends 1
+  ? 0
+  : never;
+
+export type OptionalPath<
+  T,
+  Prefix extends string = '',
+  Depth extends number = 4
+> = Depth extends never
+  ? never
+  : T extends Primitive
+  ? never
+  : T extends ReadonlyArray<any> | any[]
+  ? never
+  : T extends { [K in keyof T]: T[K] }
+  ? {
+      [K in Extract<keyof T, string>]:
+        | (undefined extends T[K]
+            ? Prefix extends ''
+              ? K
+              : `${Prefix}.${K}`
+            : never)
+        | OptionalPath<
+            T[K],
+            Prefix extends '' ? K : `${Prefix}.${K}`,
+            Decrease<Depth>
+          >;
+    }[Extract<keyof T, string>]
+  : never;

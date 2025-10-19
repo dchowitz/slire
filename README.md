@@ -354,7 +354,16 @@ Error handling and partial writes: The function performs a bulk upsert using `$s
 
 `update(id: string, update: UpdateOperation<UpdateInput>, options?: { mergeTrace?: any }): Promise<void>`
 
-Updates a single entity identified by its ID. The update operation supports both `set` (to update fields) and `unset` (to remove optional fields) operations, which can be used individually or combined. The repository excludes soft-deleted entities by default to ensure only active entities are updated. Note that managed fields (scope properties, system fields like timestamps/version/id/trace) cannot be modified through updates - the `UpdateOperation<UpdateInput>` type excludes these fields, ensuring type safety at compile time. Implementations should also perform runtime checks to ensure that managed fields are not tampered with. Any configured timestamps (like `updatedAt`), versioning increments, and trace context are applied automatically. The optional `mergeTrace` parameter allows adding operation-specific trace context. No error is thrown if the entity doesn't exist or doesn't match the scope.
+Updates a single entity identified by its ID. The update operation supports both `set` (to update fields) and `unset` (to remove optional fields) operations, which can be used individually or combined. You can also specify nested fields via dot notation in `unset` (e.g., `address.street`). The repository excludes soft-deleted entities by default to ensure only active entities are updated. Note that managed fields (scope properties, system fields like timestamps/version/id/trace) cannot be modified through updates - the `UpdateOperation<UpdateInput>` type excludes these fields, ensuring type safety at compile time. Implementations should also perform runtime checks to ensure that managed fields are not tampered with. Any configured timestamps (like `updatedAt`), versioning increments, and trace context are applied automatically. The optional `mergeTrace` parameter allows adding operation-specific trace context. No error is thrown if the entity doesn't exist or doesn't match the scope.
+
+Example with nested unsets (dot paths):
+
+```ts
+await repo.update(id, {
+  set: { status: 'processed' },
+  unset: ['optionalTopLevelField', 'address.street', 'metadata.tags'],
+});
+```
 
 ### updateMany
 

@@ -1,9 +1,6 @@
 import { Collection } from 'mongodb';
-import {
-  ManagedFields,
-  RepositoryConfig,
-  UpdateOperation,
-} from '../lib/repo-config';
+import { ManagedFields, RepositoryConfig } from '../lib/repo-config';
+import { UpdateOperation } from '../lib/smart-repo';
 import { OptionalKeys } from '../lib/types';
 
 type Prettify<T> = {
@@ -36,9 +33,19 @@ type X = {
   createdAt: Date;
   updatedAt: Date;
   version: number;
+  nested: {
+    foo: string;
+    bar: {
+      x: number;
+      y: { even: boolean; deeper?: { z: string } };
+    };
+  };
   metadata?: {
     tags: string[];
-    notes?: string;
+    notes: {
+      foo?: string;
+      bar?: { x: number; y: { even: boolean; deeper: { z: string } } };
+    };
   };
 };
 
