@@ -486,7 +486,7 @@ await repo.create(expense);
 
 **Operation-Level Trace Merging:**
 
-All write operations support merging additional trace context via the `mergeTrace` option:
+All write operations support merging additional trace context via the `mergeTrace` option. Per-operation tracing works even if no base `traceContext` was provided at repository creation time. In that case, the operation’s `mergeTrace` alone enables tracing for that write.
 
 ```typescript
 await repo.update(
@@ -494,7 +494,13 @@ await repo.update(
   { set: { status: 'approved' } },
   { mergeTrace: { operation: 'approve-expense', approver: 'jane-doe' } }
 );
-// Results in: { userId: 'john-doe', requestId: 'req-abc-123', operation: 'approve-expense', approver: 'jane-doe', _op: 'update', _at: Date }
+// Results in (with base traceContext):
+// { userId: 'john-doe', requestId: 'req-abc-123', operation: 'approve-expense', approver: 'jane-doe', _op: 'update', _at: Date }
+
+// Works without base traceContext as well:
+const repoNoBase = createSmartMongoRepo({ collection, mongoClient });
+await repoNoBase.create(expense, { mergeTrace: { operation: 'import-csv' } });
+// Document includes: { ..., _trace: { operation: 'import-csv', _op: 'create', _at: Date } }
 ```
 
 **Automatic Metadata:**

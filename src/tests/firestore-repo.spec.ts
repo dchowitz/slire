@@ -2754,6 +2754,27 @@ describe('createSmartFirestoreRepo', function () {
       expect(raw.data()).not.toHaveProperty('_trace');
     });
 
+    it('should apply per-operation mergeTrace even without base traceContext', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      const id = await repo.create(
+        createTestEntity({ name: 'Trace Only Merge (FS)' }),
+        { mergeTrace: { operation: 'one-off', actor: 'tester' } }
+      );
+
+      const raw = await rawTestCollection().doc(id).get();
+      const data = convertFirestoreTimestamps(raw.data());
+      expect(data._trace).toMatchObject({
+        operation: 'one-off',
+        actor: 'tester',
+        _op: 'create',
+      });
+      expect(data._trace._at).toBeInstanceOf(Date);
+    });
+
     it('should apply trace with latest strategy by default', async () => {
       const traceContext = { userId: 'user123', requestId: 'req456' };
       const repo = createSmartFirestoreRepo({

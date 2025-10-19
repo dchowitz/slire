@@ -2850,6 +2850,28 @@ describe('createSmartMongoRepo', function () {
       expect(rawDoc).not.toHaveProperty('_trace');
     });
 
+    it('should apply per-operation mergeTrace even without base traceContext', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+
+      const entity = createTestEntity({ name: 'Trace Only Merge' });
+      const id = await repo.create(entity, {
+        mergeTrace: { operation: 'one-off', actor: 'tester' },
+      });
+
+      const rawDoc = await rawTestCollection().findOne({
+        _id: new ObjectId(id),
+      });
+      expect(rawDoc._trace).toMatchObject({
+        operation: 'one-off',
+        actor: 'tester',
+        _op: 'create',
+      });
+      expect(rawDoc._trace._at).toBeInstanceOf(Date);
+    });
+
     it('should apply trace with latest strategy by default', async () => {
       const traceContext = { userId: 'user123', requestId: 'req456' };
       const repo = createSmartMongoRepo({

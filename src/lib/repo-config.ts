@@ -115,20 +115,13 @@ export function repoConfig<T extends { id: string }>(
   const effectiveTraceTimestamps =
     traceTimestampConfig ?? (timestampConfig ? true : undefined);
 
-  const traceEnabled = traceContext !== undefined;
   const traceKey = config.traceKey ?? DEFAULT_TRACE_KEY;
   const traceStrategy = config.traceStrategy ?? 'latest';
   const traceLimit = config.traceLimit;
 
   // Validate trace configuration
-  if (
-    traceEnabled &&
-    (traceStrategy === 'bounded' || traceStrategy === 'unbounded')
-  ) {
-    if (traceStrategy === 'bounded' && !traceLimit) {
-      throw new Error('traceLimit is required when traceStrategy is "bounded"');
-    }
-    // Note: 'unbounded' strategy doesn't require traceLimit (it's unlimited by design)
+  if (traceStrategy === 'bounded' && !traceLimit) {
+    throw new Error('traceLimit is required when traceStrategy is "bounded"');
   }
 
   const scopeObj = scope ?? ({} as Partial<T>);
@@ -177,12 +170,11 @@ export function repoConfig<T extends { id: string }>(
     }
   }
 
-  if (traceEnabled) {
-    READONLY_KEYS.add(traceKey);
-    configuredKeys.push(traceKey);
-    if (traceKey === DEFAULT_TRACE_KEY) {
-      HIDDEN_META_KEYS.add(traceKey);
-    }
+  // trace is always enabled to support per-operation tracing
+  READONLY_KEYS.add(traceKey);
+  configuredKeys.push(traceKey);
+  if (traceKey === DEFAULT_TRACE_KEY) {
+    HIDDEN_META_KEYS.add(traceKey);
   }
 
   // Validate scope doesn't use readonly fields
@@ -221,9 +213,6 @@ export function repoConfig<T extends { id: string }>(
     get softDeleteEnabled() {
       return softDeleteEnabled;
     },
-    get traceEnabled() {
-      return traceEnabled;
-    },
     get timestampsEnabled() {
       return effectiveTraceTimestamps;
     },
@@ -241,13 +230,13 @@ export function repoConfig<T extends { id: string }>(
       mergeContext?: any,
       serverTimestamp?: any
     ): any => {
-      if (!traceEnabled) return undefined;
-
       const context = mergeContext
         ? { ...traceContext, ...mergeContext }
         : traceContext;
 
-      if (!context) return undefined;
+      if (!context) {
+        return undefined;
+      }
 
       // Use configured timestamp strategy or fallback to new Date()
       let timestamp: any;

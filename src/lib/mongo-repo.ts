@@ -238,10 +238,6 @@ export function createSmartMongoRepo<
     mongoUpdate: any,
     contextOverride?: any
   ): any {
-    if (!config.traceEnabled) {
-      return mongoUpdate;
-    }
-
     const traceValue = config.buildTraceContext(op, contextOverride);
     if (!traceValue) {
       return mongoUpdate;

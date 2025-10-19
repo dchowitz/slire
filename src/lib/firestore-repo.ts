@@ -126,7 +126,7 @@ export function createSmartFirestoreRepo<
   const config = repoConfig(options ?? ({} as Config), traceContext, scope);
 
   // Firestore-specific validation: reject 'bounded' strategy
-  if (config.traceEnabled && config.getTraceStrategy() === 'bounded') {
+  if (config.getTraceStrategy() === 'bounded') {
     throw new Error(
       'Firestore does not support "bounded" trace strategy due to lack of server-side array slicing. ' +
         'Use "latest" for single trace or "unbounded" for unlimited trace history.'
@@ -230,10 +230,6 @@ export function createSmartFirestoreRepo<
     firestoreUpdate: Record<string, any>,
     contextOverride?: any
   ): Record<string, any> {
-    if (!config.traceEnabled) {
-      return firestoreUpdate;
-    }
-
     const traceValue = config.buildTraceContext(
       op,
       contextOverride,
