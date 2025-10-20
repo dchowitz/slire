@@ -9,7 +9,10 @@ import { OptionalPath, Prettify } from './types';
 
 export type FindOptions = {
   onScopeBreach?: 'empty' | 'error';
+  orderBy?: Record<string, SortDirection>;
 };
+
+type SortDirection = 1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending';
 
 export type CountOptions = {
   onScopeBreach?: 'zero' | 'error';
@@ -122,4 +125,8 @@ export function combineSpecs<T>(
       ),
     describe: specs.map((spec) => spec.describe).join(' AND '),
   };
+}
+
+export function isAscending(direction: SortDirection): boolean {
+  return direction === 'asc' || direction === 'ascending' || direction === 1;
 }

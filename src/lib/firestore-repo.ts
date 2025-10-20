@@ -22,6 +22,7 @@ import {
 } from './repo-config';
 import {
   CreateManyPartialFailure,
+  isAscending,
   SmartRepo,
   Specification,
   UpdateOperation,
@@ -657,7 +658,14 @@ export function createSmartFirestoreRepo<
 
     find: <P extends Projection<T>>(
       filter: Partial<T>,
-      options?: { projection?: P; onScopeBreach?: 'empty' | 'error' }
+      options?: {
+        projection?: P;
+        onScopeBreach?: 'empty' | 'error';
+        orderBy?: Record<
+          string,
+          1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending'
+        >;
+      }
     ): QueryStream<Projected<T, P>> => {
       if (config.scopeBreach(filter)) {
         const mode = options?.onScopeBreach ?? 'empty';
@@ -680,6 +688,16 @@ export function createSmartFirestoreRepo<
       }
 
       query = applyConstraints(query);
+
+      // Apply ordering
+      if (options?.orderBy) {
+        for (const [field, dir] of Object.entries(options.orderBy)) {
+          query = query.orderBy(field, isAscending(dir) ? 'asc' : 'desc');
+        }
+      } else {
+        // Default sort by document ID for deterministic ordering
+        query = query.orderBy('__name__', 'asc');
+      }
 
       // Apply server-side projection (idKey is computed from doc.id)
       if (options?.projection) {
@@ -716,7 +734,14 @@ export function createSmartFirestoreRepo<
 
     findBySpec: <P extends Projection<T>>(
       spec: Specification<T>,
-      options?: { projection?: P; onScopeBreach?: 'empty' | 'error' }
+      options?: {
+        projection?: P;
+        onScopeBreach?: 'empty' | 'error';
+        orderBy?: Record<
+          string,
+          1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending'
+        >;
+      }
     ): QueryStream<Projected<T, P>> => {
       return repo.find<P>(spec.toFilter(), options as any);
     },

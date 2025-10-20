@@ -1249,6 +1249,64 @@ describe('createSmartFirestoreRepo', function () {
       expect(results).toHaveLength(0);
     });
 
+    it('should support streaming operations (skip, take, toArray)', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'User 1', age: 20 }),
+        createTestEntity({ name: 'User 2', age: 25 }),
+        createTestEntity({ name: 'User 3', age: 30 }),
+        createTestEntity({ name: 'User 4', age: 35 }),
+        createTestEntity({ name: 'User 5', age: 40 }),
+      ]);
+
+      const stream = repo.find({}, { orderBy: { name: 'asc' } });
+
+      const result = await stream.skip(2).take(2).toArray();
+
+      expect(result).toHaveLength(2);
+      expect(result[0].name).toBe('User 3');
+      expect(result[1].name).toBe('User 4');
+    });
+
+    it('should support orderBy option', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'Charlie', age: 30 }),
+        createTestEntity({ name: 'Alice', age: 25 }),
+        createTestEntity({ name: 'Bob', age: 35 }),
+      ]);
+
+      // Test ascending order
+      const ascending = await repo
+        .find({}, { orderBy: { name: 'asc' } })
+        .toArray();
+      expect(ascending.map((u) => u.name)).toEqual(['Alice', 'Bob', 'Charlie']);
+
+      // Test descending order
+      const descending = await repo
+        .find({}, { orderBy: { name: 'desc' } })
+        .toArray();
+      expect(descending.map((u) => u.name)).toEqual([
+        'Charlie',
+        'Bob',
+        'Alice',
+      ]);
+
+      // Test mixed directions
+      const mixed = await repo
+        .find({}, { orderBy: { age: 'desc', name: 'asc' } })
+        .toArray();
+      expect(mixed.map((u) => u.name)).toEqual(['Bob', 'Charlie', 'Alice']); // Bob 35, Charlie 30, Alice 25
+    });
+
     it('should support projections', async () => {
       const repo = createSmartFirestoreRepo({
         collection: testCollection(),

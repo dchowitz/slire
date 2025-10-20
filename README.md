@@ -400,13 +400,36 @@ For large inputs, the operation may run in chunks and is not atomic across chunk
 
 ### find
 
-`find(filter: Partial<T>, options?: { onScopeBreach?: 'empty' | 'error' }): Promise<T[]>`
+`find(filter: Partial<T>, options?: FindOptions): QueryStream<T>`
 
-`find<P extends Projection<T>>(filter: Partial<T>, options: { projection: P; onScopeBreach?: 'empty' | 'error' }): Promise<Projected<T, P>[]>`
+`find<P extends Projection<T>>(filter: Partial<T>, options: FindOptions & { projection: P }): QueryStream<Projected<T, P>>`
 
-Queries entities based on the provided filter criteria. The filter uses a subset of the entity properties to match against. The repository automatically applies scope filtering in addition to the user-provided filter. If the filter breaches the configured scope, behavior is controlled by `onScopeBreach` (default `'empty'` → return `[]`; `'error'` → throw). If soft delete is enabled, soft-deleted entities are automatically excluded from results. Returns an empty array if no matching entities are found. When using the projection variant, only the specified fields are returned and the result is properly typed to reflect the projection.
+Queries entities and returns a streaming result that provides both array and iterator access. The filter uses a subset of the entity properties to match against. The repository automatically applies scope filtering in addition to the user-provided filter. If the filter breaches the configured scope, behavior is controlled by `onScopeBreach` (default `'empty'` → return empty stream; `'error'` → throw). If soft delete is enabled, soft-deleted entities are automatically excluded from results.
 
-Note that the signature may change in the future to include parameters for limits and sort order, and a streaming version is also being considered.
+The `FindOptions` parameter supports:
+- `onScopeBreach?: 'empty' | 'error'` - Handle scope breaches
+- `orderBy?: Record<string, 1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending'>` - Sort results
+
+**Usage Examples:**
+
+```typescript
+// Stream processing
+for await (const user of repo.find({ status: 'active' })) {
+  console.log(user.name);
+}
+
+// Convert to array
+const users = await repo.find({ status: 'active' }).toArray();
+
+// Chain operations
+const result = await repo.find({ status: 'active' })
+  .skip(10)
+  .take(5)
+  .toArray();
+
+// With ordering
+const orderedUsers = await repo.find({}, { orderBy: { name: 'asc' } }).toArray();
+```
 
 ### findBySpec
 

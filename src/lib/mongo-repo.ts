@@ -11,6 +11,7 @@ import {
 } from './repo-config';
 import {
   CreateManyPartialFailure,
+  isAscending,
   SmartRepo,
   Specification,
   UpdateOperation,
@@ -622,7 +623,14 @@ export function createSmartMongoRepo<
 
     find: <P extends Projection<T> | undefined>(
       filter: Partial<T>,
-      options?: { projection?: P; onScopeBreach?: 'empty' | 'error' }
+      options?: {
+        projection?: P;
+        onScopeBreach?: 'empty' | 'error';
+        orderBy?: Record<
+          string,
+          1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending'
+        >;
+      }
     ): QueryStream<Projected<T, P>> => {
       if (config.scopeBreach(filter)) {
         const mode = options?.onScopeBreach ?? 'empty';
@@ -642,12 +650,25 @@ export function createSmartMongoRepo<
           )
         : undefined;
 
-      const cursor = collection.find(
-        applyConstraints(mongoFilter),
-        withSessionOptions(
-          mongoProjection ? { projection: mongoProjection } : undefined
+      // Build sort option from orderBy
+      const sortOption: Record<string, 1 | -1> = {};
+      if (options?.orderBy) {
+        for (const [field, dir] of Object.entries(options.orderBy)) {
+          sortOption[field] = isAscending(dir) ? 1 : -1;
+        }
+      } else {
+        // Default sort by _id for deterministic ordering
+        sortOption._id = 1;
+      }
+
+      const cursor = collection
+        .find(
+          applyConstraints(mongoFilter),
+          withSessionOptions(
+            mongoProjection ? { projection: mongoProjection } : undefined
+          )
         )
-      );
+        .sort(sortOption);
 
       const generator = async function* () {
         try {
@@ -668,7 +689,14 @@ export function createSmartMongoRepo<
 
     findBySpec: <P extends Projection<T>>(
       spec: Specification<T>,
-      options?: { projection?: P; onScopeBreach?: 'empty' | 'error' }
+      options?: {
+        projection?: P;
+        onScopeBreach?: 'empty' | 'error';
+        orderBy?: Record<
+          string,
+          1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending'
+        >;
+      }
     ): QueryStream<Projected<T, P>> => {
       return repo.find<P>(spec.toFilter(), options as any);
     },
