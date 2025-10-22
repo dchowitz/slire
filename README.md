@@ -425,10 +425,42 @@ const users = await repo.find({ status: 'active' }).toArray();
 // Chain operations
 const result = await repo.find({ status: 'active' }).skip(10).take(5).toArray();
 
-// With ordering
+// With ordering (supports dot notation for nested fields)
 const orderedUsers = await repo
-  .find({}, { orderBy: { name: 'asc' } })
+  .find({}, { orderBy: { name: 'asc', 'profile.age': 'desc' } })
   .toArray();
+```
+
+**Important: QueryStream is single-use**
+
+QueryStream instances are designed for single consumption. Once you start iterating (via `toArray()`, `for await`, or directly accessing the iterator), the stream is marked as consumed and cannot be reused:
+
+```typescript
+const stream = repo.find({ status: 'active' });
+
+// First consumption - works fine
+const results1 = await stream.toArray();
+
+// Second consumption - throws error
+const results2 = await stream.toArray(); // Error: QueryStream has already been consumed
+
+// Chaining after consumption - also throws error
+const limited = stream.take(10); // Error: Cannot chain operations on already-consumed QueryStream
+```
+
+To use the same query multiple times, call `find()` again to get a fresh stream. Chaining operations (like `take()`, `skip()`, `paged()`) is allowed before consumption starts, and each derived stream is independent:
+
+```typescript
+// Valid: chain before consumption
+const stream = repo.find({ status: 'active' });
+const result = await stream.skip(10).take(5).toArray(); // Works fine
+
+// Valid: multiple derived streams from same base (before base is consumed)
+const base = repo.find({});
+const first10 = base.take(10);
+const after10 = base.skip(10);
+await first10.toArray(); // Works
+await after10.toArray(); // Also works
 ```
 
 ### findBySpec

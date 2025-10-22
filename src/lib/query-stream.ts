@@ -1,5 +1,6 @@
 export class QueryStream<T> {
   private iterator: AsyncIterator<T>;
+  private consumed = false;
 
   constructor(iterator: AsyncIterator<T>) {
     this.iterator = iterator;
@@ -22,20 +23,33 @@ export class QueryStream<T> {
   }
 
   [Symbol.asyncIterator](): AsyncIterator<T> {
+    if (this.consumed) {
+      throw new Error('QueryStream has already been consumed and cannot be reused');
+    }
+    this.consumed = true;
     return this.iterator;
   }
 
   take(limit: number): QueryStream<T> {
+    if (this.consumed) {
+      throw new Error('Cannot chain operations on an already-consumed QueryStream');
+    }
     const iterator = this._take(limit);
     return new QueryStream(iterator);
   }
 
   skip(offset: number): QueryStream<T> {
+    if (this.consumed) {
+      throw new Error('Cannot chain operations on an already-consumed QueryStream');
+    }
     const iterator = this._skip(offset);
     return new QueryStream(iterator);
   }
 
   paged(pageSize: number): QueryStream<T[]> {
+    if (this.consumed) {
+      throw new Error('Cannot chain operations on an already-consumed QueryStream');
+    }
     const iterator = this._paged(pageSize);
     return new QueryStream(iterator);
   }

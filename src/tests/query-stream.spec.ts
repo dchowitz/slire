@@ -1,4 +1,3 @@
-import { range } from 'lodash-es';
 import { QueryStream } from '../lib/query-stream';
 
 describe('QueryStream', () => {
@@ -24,13 +23,13 @@ describe('QueryStream', () => {
     });
 
     it('should handle empty streams', async () => {
-      const stream = QueryStream.empty<number>();
-
-      const result = await stream.toArray();
+      const stream1 = QueryStream.empty<number>();
+      const result = await stream1.toArray();
       expect(result).toEqual([]);
 
+      const stream2 = QueryStream.empty<number>();
       const items: number[] = [];
-      for await (const item of stream) {
+      for await (const item of stream2) {
         items.push(item);
       }
       expect(items).toEqual([]);
@@ -203,27 +202,104 @@ describe('QueryStream', () => {
     });
   });
 
-  describe('multiple iterators', () => {
-    it('yield items from the same underlying stream (no duplicates)', async () => {
-      const base = createStream(range(0, 20));
-      const i1 = base[Symbol.asyncIterator]();
-      const i2 = base.skip(1)[Symbol.asyncIterator]();
-      const i3 = base.take(3)[Symbol.asyncIterator]();
+  describe('consumption safeguards', () => {
+    it('should prevent reusing a stream after toArray', async () => {
+      const stream = createStream([1, 2, 3]);
 
-      expect((await i1.next()).value).toBe(0);
-      expect((await i1.next()).value).toBe(1);
-      expect((await i2.next()).value).toBe(3); // skip 1
-      expect((await i2.next()).value).toBe(4);
-      expect((await i1.next()).value).toBe(5);
-      expect((await i3.next()).value).toBe(6);
-      expect((await i2.next()).value).toBe(7);
-      expect((await i3.next()).value).toBe(8);
-      expect((await i2.next()).value).toBe(9);
-      expect((await i1.next()).value).toBe(10);
-      expect((await i3.next()).value).toBe(11);
-      expect((await i3.next()).value).toBeUndefined(); // this closes the rest
-      expect((await i2.next()).value).toBeUndefined();
-      expect((await i1.next()).value).toBeUndefined();
+      await stream.toArray();
+
+      await expect(stream.toArray()).rejects.toThrow(
+        'QueryStream has already been consumed and cannot be reused'
+      );
+    });
+
+    it('should prevent reusing a stream after async iteration', async () => {
+      const stream = createStream([1, 2, 3]);
+
+      for await (const item of stream) {
+        // consume the stream
+      }
+
+      await expect(stream.toArray()).rejects.toThrow(
+        'QueryStream has already been consumed and cannot be reused'
+      );
+    });
+
+    it('should prevent chaining after consumption starts', async () => {
+      const stream = createStream([1, 2, 3, 4, 5]);
+
+      // Start consuming
+      const iterator = stream[Symbol.asyncIterator]();
+      await iterator.next();
+
+      // Try to chain - should fail
+      expect(() => stream.take(2)).toThrow(
+        'Cannot chain operations on an already-consumed QueryStream'
+      );
+    });
+
+    it('should allow chaining before consumption', async () => {
+      const stream = createStream([1, 2, 3, 4, 5]);
+
+      // Chain operations before consumption - should work
+      const chained = stream.skip(1).take(2);
+      const result = await chained.toArray();
+
+      expect(result).toEqual([2, 3]);
+    });
+
+    it('should prevent chaining on derived streams after consumption', async () => {
+      const stream = createStream([1, 2, 3, 4, 5]);
+      const derived = stream.skip(1);
+
+      // Consume the derived stream
+      await derived.toArray();
+
+      // Try to chain on consumed derived stream - should fail
+      expect(() => derived.take(2)).toThrow(
+        'Cannot chain operations on an already-consumed QueryStream'
+      );
+    });
+
+    it('should allow consuming different derived streams independently', async () => {
+      // Each derived stream is independent once created
+      const base1 = createStream([1, 2, 3, 4, 5]);
+      const derived1 = base1.take(3);
+
+      const base2 = createStream([1, 2, 3, 4, 5]);
+      const derived2 = base2.skip(2);
+
+      // Each derived stream can be consumed independently
+      const result1 = await derived1.toArray();
+      expect(result1).toEqual([1, 2, 3]);
+
+      const result2 = await derived2.toArray();
+      expect(result2).toEqual([3, 4, 5]);
+    });
+
+    it('should prevent multiple toArray calls', async () => {
+      const stream = createStream([1, 2, 3]);
+
+      const result1 = await stream.toArray();
+      expect(result1).toEqual([1, 2, 3]);
+
+      await expect(stream.toArray()).rejects.toThrow(
+        'QueryStream has already been consumed and cannot be reused'
+      );
+    });
+
+    it('should prevent mixing iteration styles', async () => {
+      const stream = createStream([1, 2, 3, 4, 5]);
+
+      // Start with for-await
+      for await (const item of stream) {
+        if (item === 2) break;
+      }
+
+      // Try to use toArray - should fail
+      await expect(stream.toArray()).rejects.toThrow(
+        'QueryStream has already been consumed and cannot be reused'
+      );
     });
   });
 });
