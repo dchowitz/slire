@@ -1,3 +1,4 @@
+import { range } from 'lodash-es';
 import { QueryStream } from '../lib/query-stream';
 
 describe('QueryStream', () => {
@@ -199,6 +200,30 @@ describe('QueryStream', () => {
       );
 
       await expect(errorStream.toArray()).rejects.toThrow('Test error');
+    });
+  });
+
+  describe('multiple iterators', () => {
+    it('yield items from the same underlying stream (no duplicates)', async () => {
+      const base = createStream(range(0, 20));
+      const i1 = base[Symbol.asyncIterator]();
+      const i2 = base.skip(1)[Symbol.asyncIterator]();
+      const i3 = base.take(3)[Symbol.asyncIterator]();
+
+      expect((await i1.next()).value).toBe(0);
+      expect((await i1.next()).value).toBe(1);
+      expect((await i2.next()).value).toBe(3); // skip 1
+      expect((await i2.next()).value).toBe(4);
+      expect((await i1.next()).value).toBe(5);
+      expect((await i3.next()).value).toBe(6);
+      expect((await i2.next()).value).toBe(7);
+      expect((await i3.next()).value).toBe(8);
+      expect((await i2.next()).value).toBe(9);
+      expect((await i1.next()).value).toBe(10);
+      expect((await i3.next()).value).toBe(11);
+      expect((await i3.next()).value).toBeUndefined(); // this closes the rest
+      expect((await i2.next()).value).toBeUndefined();
+      expect((await i1.next()).value).toBeUndefined();
     });
   });
 });
