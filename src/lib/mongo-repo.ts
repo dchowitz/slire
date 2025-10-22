@@ -691,7 +691,7 @@ export function createSmartMongoRepo<
       options?: {
         projection?: P;
         onScopeBreach?: 'empty' | 'error';
-        orderBy?: OrderBy<T>
+        orderBy?: OrderBy<T>;
       }
     ): QueryStream<Projected<T, P>> => {
       return repo.find<P>(spec.toFilter(), options as any);
@@ -721,6 +721,90 @@ export function createSmartMongoRepo<
       options?: { onScopeBreach?: 'zero' | 'error' }
     ): Promise<number> => {
       return repo.count(spec.toFilter(), options);
+    },
+
+    findPage: async <P extends Projection<T> | undefined>(
+      filter: Partial<T>,
+      options: {
+        startAfter?: string;
+        limit: number;
+        orderBy?: OrderBy<T>;
+        onScopeBreach?: 'empty' | 'error';
+        projection?: P;
+      }
+    ): Promise<{
+      items: Projected<T, P>[];
+      nextStartAfter: string | undefined;
+    }> => {
+      if (config.scopeBreach(filter)) {
+        const mode = options.onScopeBreach ?? 'empty';
+        if (mode === 'error') {
+          throw new Error('Scope breach detected in findPage filter');
+        }
+        return { items: [], nextStartAfter: undefined };
+      }
+
+      const mongoFilter = convertFilter(filter);
+
+      const mongoProjection = options.projection
+        ? Object.fromEntries(
+            Object.keys(options.projection)
+              .filter((k) => k !== idKey)
+              .map((k) => [k, 1])
+          )
+        : undefined;
+
+      // Build sort option from orderBy
+      const sortOption: Record<string, 1 | -1> = {};
+      if (options.orderBy) {
+        for (const [field, dir] of Object.entries(options.orderBy)) {
+          sortOption[field] = isAscending(dir as SortDirection) ? 1 : -1;
+        }
+      } else {
+        // Default sort by _id for deterministic ordering
+        sortOption._id = 1;
+      }
+
+      let cursor = collection
+        .find(
+          applyConstraints(mongoFilter),
+          withSessionOptions(
+            mongoProjection ? { projection: mongoProjection } : undefined
+          )
+        )
+        .sort(sortOption);
+
+      // Apply startAfter cursor if provided
+      if (options.startAfter) {
+        try {
+          const cursorId = new ObjectId(options.startAfter);
+          cursor = cursor.skip(0).filter({ _id: { $gt: cursorId } });
+        } catch {
+          throw new Error(`Invalid startAfter cursor: ${options.startAfter}`);
+        }
+      }
+
+      // Fetch limit + 1 to determine if there are more results
+      cursor = cursor.limit(options.limit + 1);
+
+      const docs = await cursor.toArray();
+      const hasMore = docs.length > options.limit;
+
+      // Take only the requested limit
+      const items = docs
+        .slice(0, options.limit)
+        .map((doc) => fromMongoDoc<P>(doc, options.projection as P));
+
+      // Get the cursor for the next page (last document's _id)
+      const nextStartAfter =
+        hasMore && items.length > 0
+          ? docs[options.limit - 1]._id.toString()
+          : undefined;
+
+      return {
+        items: items as Projected<T, P>[],
+        nextStartAfter,
+      };
     },
 
     // To be used when simple CRUD methods are not enough and direct data access

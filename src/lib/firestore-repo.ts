@@ -739,7 +739,7 @@ export function createSmartFirestoreRepo<
       options?: {
         projection?: P;
         onScopeBreach?: 'empty' | 'error';
-        orderBy?: OrderBy<T>
+        orderBy?: OrderBy<T>;
       }
     ): QueryStream<Projected<T, P>> => {
       return repo.find<P>(spec.toFilter(), options as any);
@@ -780,6 +780,99 @@ export function createSmartFirestoreRepo<
       options?: { onScopeBreach?: 'zero' | 'error' }
     ): Promise<number> => {
       return repo.count(spec.toFilter(), options);
+    },
+
+    findPage: async <P extends Projection<T> | undefined>(
+      filter: Partial<T>,
+      options: {
+        startAfter?: string;
+        limit: number;
+        orderBy?: OrderBy<T>;
+        onScopeBreach?: 'empty' | 'error';
+        projection?: P;
+      }
+    ): Promise<{
+      items: Projected<T, P>[];
+      nextStartAfter: string | undefined;
+    }> => {
+      if (config.scopeBreach(filter)) {
+        const mode = options.onScopeBreach ?? 'empty';
+        if (mode === 'error') {
+          throw new Error('Scope breach detected in findPage filter');
+        }
+        return { items: [], nextStartAfter: undefined };
+      }
+
+      let query: any = collection;
+
+      // Apply filter constraints
+      for (const [key, value] of Object.entries(filter)) {
+        if (value !== undefined) {
+          query = query.where(key, '==', value);
+        }
+      }
+
+      // Apply repository constraints (soft delete, etc.)
+      query = applyConstraints(query);
+
+      // Apply ordering
+      if (options.orderBy) {
+        for (const [field, dir] of Object.entries(options.orderBy)) {
+          query = query.orderBy(
+            field,
+            isAscending(dir as SortDirection) ? 'asc' : 'desc'
+          );
+        }
+      } else {
+        // Default sort by __name__ for deterministic ordering
+        query = query.orderBy('__name__', 'asc');
+      }
+
+      // Apply startAfter cursor if provided
+      if (options.startAfter) {
+        const docRef = collection.doc(options.startAfter);
+        const docSnapshot = await (transaction
+          ? transaction.get(docRef)
+          : docRef.get());
+        if (docSnapshot.exists) {
+          query = query.startAfter(docSnapshot);
+        } else {
+          throw new Error(`Invalid startAfter cursor: ${options.startAfter}`);
+        }
+      }
+
+      // Fetch limit + 1 to determine if there are more results
+      query = query.limit(options.limit + 1);
+
+      // Apply server-side projection (idKey is computed from doc.id)
+      if (options.projection) {
+        const projectionFields = Object.keys(options.projection);
+        const nonIdFields = projectionFields.filter((k) => k !== idKey);
+        if (nonIdFields.length > 0) {
+          query = query.select(...nonIdFields);
+        }
+      }
+
+      const snapshot = transaction
+        ? await transaction.get(query)
+        : await query.get();
+
+      const docs = snapshot.docs;
+      const hasMore = docs.length > options.limit;
+
+      // Take only the requested limit
+      const items = docs
+        .slice(0, options.limit)
+        .map((doc: any) => fromFirestoreDoc(doc, options.projection));
+
+      // Get the cursor for the next page (last document's id)
+      const nextStartAfter =
+        hasMore && items.length > 0 ? docs[options.limit - 1].id : undefined;
+
+      return {
+        items: items as Projected<T, P>[],
+        nextStartAfter,
+      };
     },
 
     // Firestore-specific helpers

@@ -25,6 +25,18 @@ export type CountOptions = {
   onScopeBreach?: 'zero' | 'error';
 };
 
+export type FindPageOptions<T> = {
+  startAfter?: string;
+  limit: number;
+  orderBy?: OrderBy<T>;
+  onScopeBreach?: 'empty' | 'error';
+};
+
+export type PageResult<T> = {
+  items: T[];
+  nextStartAfter: string | undefined;
+};
+
 // database-agnostic interface (limited to simple CRUD operations)
 export type SmartRepo<
   T extends { id: string },
@@ -92,6 +104,15 @@ export type SmartRepo<
     spec: S,
     options?: CountOptions
   ): Promise<number>;
+
+  findPage(
+    filter: Partial<T>,
+    options: FindPageOptions<T>
+  ): Promise<PageResult<T>>;
+  findPage<P extends Projection<T>>(
+    filter: Partial<T>,
+    options: FindPageOptions<T> & { projection: P }
+  ): Promise<PageResult<Projected<T, P>>>;
 };
 
 export type UpdateOperation<T> =

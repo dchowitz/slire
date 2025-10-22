@@ -12,6 +12,7 @@
   - [delete](#delete) - [deleteMany](#deletemany)
   - [find](#find) - [findBySpec](#findbyspec)
   - [count](#count) - [countBySpec](#countbyspec)
+  - [findPage](#findpage)
 - [MongoDB Implementation](#mongodb-implementation)
   - [createSmartMongoRepo](#createsmartmongorepo)
   - [withSession](#withsession)
@@ -482,6 +483,73 @@ Returns the number of entities that match the provided filter criteria. Like `fi
 `countBySpec<S extends Specification<T>>(spec: S, options?: { onScopeBreach?: 'zero' | 'error' }): Promise<number>`
 
 Returns the number of entities that match the provided specification. Like `count`, the repository automatically applies scope filtering and soft delete exclusion. This method works with the same specification objects used by `findBySpec`, enabling consistent query logic across find and count operations. Returns 0 if no matching entities are found.
+
+### findPage
+
+`findPage(filter: Partial<T>, options: FindPageOptions): Promise<PageResult<T>>`
+
+`findPage<P extends Projection<T>>(filter: Partial<T>, options: FindPageOptions & { projection: P }): Promise<PageResult<Projected<T, P>>>`
+
+Provides efficient cursor-based pagination for large datasets. Unlike `find().skip().take()` which becomes slower with larger offsets, `findPage` uses database-native cursors for consistent performance regardless of page depth.
+
+The `FindPageOptions` parameter includes:
+
+- `limit: number` - Maximum number of items per page (required)
+- `startAfter?: string` - Cursor from previous page's `nextStartAfter` (optional)
+- `orderBy?: Record<string, 1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending'>` - Sort order (dot notation supported)
+- `onScopeBreach?: 'empty' | 'error'` - Handle scope breaches (default: 'empty')
+
+Returns `PageResult<T>` containing:
+
+- `items: T[]` - The page of results (up to `limit` items)
+- `nextStartAfter: string | undefined` - Cursor for next page (undefined when no more results)
+
+**Usage Examples:**
+
+```typescript
+// First page
+const page1 = await repo.findPage(
+  { status: 'active' },
+  { limit: 20, orderBy: { createdAt: 'desc' } }
+);
+
+// Subsequent pages using cursor
+let currentPage = page1;
+while (currentPage.nextStartAfter) {
+  currentPage = await repo.findPage(
+    { status: 'active' },
+    {
+      limit: 20,
+      orderBy: { createdAt: 'desc' },
+      startAfter: currentPage.nextStartAfter,
+    }
+  );
+  // Process currentPage.items
+}
+
+// With projection
+const page = await repo.findPage(
+  { isActive: true },
+  {
+    limit: 10,
+    projection: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  }
+);
+```
+
+**Performance Considerations:**
+
+- Cursor-based pagination avoids the performance penalty of `skip()` for large offsets
+- The cursor is an opaque string token - for MongoDB it's the document `_id`, for Firestore it's the document ID
+- Cursors remain valid as long as the referenced document exists in the database
+- If the document referenced by a cursor is deleted, `findPage` throws an error
+- For best performance with large datasets, always specify an `orderBy` that includes unique fields
+
+**When to Use:**
+
+- **Use `findPage`** for UI pagination, API endpoints with page tokens, or iterating through large datasets across multiple requests
+- **Use `find().skip().take()`** for small result sets, client-side streaming, or when you need the full QueryStream interface
 
 ## MongoDB Implementation
 
