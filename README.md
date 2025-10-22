@@ -409,7 +409,7 @@ Queries entities and returns a streaming result that provides both array and ite
 The `FindOptions` parameter supports:
 
 - `onScopeBreach?: 'empty' | 'error'` - Handle scope breaches
-- `orderBy?: Record<string, 1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending'>` - Sort results
+- `orderBy?: Record<string, 1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending'>` - Sort results (dot notation supported for nested properties)
 
 **Usage Examples:**
 
