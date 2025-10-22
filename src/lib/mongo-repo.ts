@@ -697,32 +697,6 @@ export function createSmartMongoRepo<
       return repo.find<P>(spec.toFilter(), options as any);
     },
 
-    count: async (
-      filter: Partial<T>,
-      options?: { onScopeBreach?: 'zero' | 'error' }
-    ): Promise<number> => {
-      if (config.scopeBreach(filter)) {
-        const mode = options?.onScopeBreach ?? 'zero';
-        if (mode === 'error') {
-          throw new Error('Scope breach detected in count filter');
-        }
-        return 0;
-      }
-
-      const mongoFilter = convertFilter(filter);
-      return await collection.countDocuments(
-        applyConstraints(mongoFilter),
-        withSessionOptions()
-      );
-    },
-
-    countBySpec: async (
-      spec: Specification<T>,
-      options?: { onScopeBreach?: 'zero' | 'error' }
-    ): Promise<number> => {
-      return repo.count(spec.toFilter(), options);
-    },
-
     findPage: async <P extends Projection<T> | undefined>(
       filter: Partial<T>,
       options: {
@@ -805,6 +779,32 @@ export function createSmartMongoRepo<
         items: items as Projected<T, P>[],
         nextStartAfter,
       };
+    },
+
+    count: async (
+      filter: Partial<T>,
+      options?: { onScopeBreach?: 'zero' | 'error' }
+    ): Promise<number> => {
+      if (config.scopeBreach(filter)) {
+        const mode = options?.onScopeBreach ?? 'zero';
+        if (mode === 'error') {
+          throw new Error('Scope breach detected in count filter');
+        }
+        return 0;
+      }
+
+      const mongoFilter = convertFilter(filter);
+      return await collection.countDocuments(
+        applyConstraints(mongoFilter),
+        withSessionOptions()
+      );
+    },
+
+    countBySpec: async (
+      spec: Specification<T>,
+      options?: { onScopeBreach?: 'zero' | 'error' }
+    ): Promise<number> => {
+      return repo.count(spec.toFilter(), options);
     },
 
     // To be used when simple CRUD methods are not enough and direct data access

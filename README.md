@@ -11,8 +11,8 @@
   - [update](#update) - [updateMany](#updatemany)
   - [delete](#delete) - [deleteMany](#deletemany)
   - [find](#find) - [findBySpec](#findbyspec)
-  - [count](#count) - [countBySpec](#countbyspec)
   - [findPage](#findpage)
+  - [count](#count) - [countBySpec](#countbyspec)
 - [MongoDB Implementation](#mongodb-implementation)
   - [createSmartMongoRepo](#createsmartmongorepo)
   - [withSession](#withsession)
@@ -472,18 +472,6 @@ await after10.toArray(); // Also works
 
 Queries entities using a specification object that encapsulates filter criteria and business rules. The repository automatically applies scope filtering and soft delete exclusion just like `find`. Specifications provide composable, reusable query logic that can be combined using `combineSpecs`. The `FindOptions` parameter supports the same options as `find` including `orderBy` for sorting. See [Query Abstraction Patterns](#query-abstraction-patterns) for detailed examples and patterns.
 
-### count
-
-`count(filter: Partial<T>, options?: { onScopeBreach?: 'zero' | 'error' }): Promise<number>`
-
-Returns the number of entities that match the provided filter criteria. Like `find`, the repository automatically applies scope filtering in addition to the user-provided filter, and soft-deleted entities are automatically excluded from the count if soft delete is enabled. Returns 0 if no matching entities are found.
-
-### countBySpec
-
-`countBySpec<S extends Specification<T>>(spec: S, options?: { onScopeBreach?: 'zero' | 'error' }): Promise<number>`
-
-Returns the number of entities that match the provided specification. Like `count`, the repository automatically applies scope filtering and soft delete exclusion. This method works with the same specification objects used by `findBySpec`, enabling consistent query logic across find and count operations. Returns 0 if no matching entities are found.
-
 ### findPage
 
 `findPage(filter: Partial<T>, options: FindPageOptions): Promise<PageResult<T>>`
@@ -550,6 +538,18 @@ const page = await repo.findPage(
 
 - **Use `findPage`** for UI pagination, API endpoints with page tokens, or iterating through large datasets across multiple requests
 - **Use `find().skip().take()`** for small result sets, client-side streaming, or when you need the full QueryStream interface
+
+### count
+
+`count(filter: Partial<T>, options?: { onScopeBreach?: 'zero' | 'error' }): Promise<number>`
+
+Returns the number of entities that match the provided filter criteria. Like `find`, the repository automatically applies scope filtering in addition to the user-provided filter, and soft-deleted entities are automatically excluded from the count if soft delete is enabled. Returns 0 if no matching entities are found.
+
+### countBySpec
+
+`countBySpec<S extends Specification<T>>(spec: S, options?: { onScopeBreach?: 'zero' | 'error' }): Promise<number>`
+
+Returns the number of entities that match the provided specification. Like `count`, the repository automatically applies scope filtering and soft delete exclusion. This method works with the same specification objects used by `findBySpec`, enabling consistent query logic across find and count operations. Returns 0 if no matching entities are found.
 
 ## MongoDB Implementation
 

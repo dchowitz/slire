@@ -745,43 +745,6 @@ export function createSmartFirestoreRepo<
       return repo.find<P>(spec.toFilter(), options as any);
     },
 
-    count: async (
-      filter: Partial<T>,
-      options?: { onScopeBreach?: 'zero' | 'error' }
-    ): Promise<number> => {
-      let query: Query = collection;
-
-      if (config.scopeBreach(filter)) {
-        const mode = options?.onScopeBreach ?? 'zero';
-        if (mode === 'error') {
-          throw new Error('Scope breach detected in count filter');
-        }
-        return 0;
-      }
-
-      // Apply filter constraints (map idKey to documentId)
-      for (const [key, value] of Object.entries(filter)) {
-        if (value === undefined) continue;
-        if (key === idKey) {
-          query = query.where(FieldPath.documentId(), '==', value as any);
-        } else {
-          query = query.where(key, '==', value as any);
-        }
-      }
-
-      query = applyConstraints(query.select());
-
-      const agg = await query.count().get();
-      return agg.data().count;
-    },
-
-    countBySpec: async (
-      spec: Specification<T>,
-      options?: { onScopeBreach?: 'zero' | 'error' }
-    ): Promise<number> => {
-      return repo.count(spec.toFilter(), options);
-    },
-
     findPage: async <P extends Projection<T> | undefined>(
       filter: Partial<T>,
       options: {
@@ -873,6 +836,43 @@ export function createSmartFirestoreRepo<
         items: items as Projected<T, P>[],
         nextStartAfter,
       };
+    },
+
+    count: async (
+      filter: Partial<T>,
+      options?: { onScopeBreach?: 'zero' | 'error' }
+    ): Promise<number> => {
+      let query: Query = collection;
+
+      if (config.scopeBreach(filter)) {
+        const mode = options?.onScopeBreach ?? 'zero';
+        if (mode === 'error') {
+          throw new Error('Scope breach detected in count filter');
+        }
+        return 0;
+      }
+
+      // Apply filter constraints (map idKey to documentId)
+      for (const [key, value] of Object.entries(filter)) {
+        if (value === undefined) continue;
+        if (key === idKey) {
+          query = query.where(FieldPath.documentId(), '==', value as any);
+        } else {
+          query = query.where(key, '==', value as any);
+        }
+      }
+
+      query = applyConstraints(query.select());
+
+      const agg = await query.count().get();
+      return agg.data().count;
+    },
+
+    countBySpec: async (
+      spec: Specification<T>,
+      options?: { onScopeBreach?: 'zero' | 'error' }
+    ): Promise<number> => {
+      return repo.count(spec.toFilter(), options);
     },
 
     // Firestore-specific helpers

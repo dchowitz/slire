@@ -99,12 +99,6 @@ export type SmartRepo<
     options: FindOptions<T> & { projection: P }
   ): QueryStream<Projected<T, P>>;
 
-  count(filter: Partial<T>, options?: CountOptions): Promise<number>;
-  countBySpec<S extends Specification<T>>(
-    spec: S,
-    options?: CountOptions
-  ): Promise<number>;
-
   findPage(
     filter: Partial<T>,
     options: FindPageOptions<T>
@@ -113,6 +107,12 @@ export type SmartRepo<
     filter: Partial<T>,
     options: FindPageOptions<T> & { projection: P }
   ): Promise<PageResult<Projected<T, P>>>;
+
+  count(filter: Partial<T>, options?: CountOptions): Promise<number>;
+  countBySpec<S extends Specification<T>>(
+    spec: S,
+    options?: CountOptions
+  ): Promise<number>;
 };
 
 export type UpdateOperation<T> =

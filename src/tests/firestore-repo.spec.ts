@@ -1444,6 +1444,181 @@ describe('createSmartFirestoreRepo', function () {
     });
   });
 
+  describe('findPage', () => {
+    it('should return a page of results with pagination cursor', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'Alice', age: 25 }),
+        createTestEntity({ name: 'Bob', age: 30 }),
+        createTestEntity({ name: 'Charlie', age: 35 }),
+        createTestEntity({ name: 'David', age: 40 }),
+        createTestEntity({ name: 'Eve', age: 45 }),
+      ]);
+
+      // First page
+      const page1 = await repo.findPage({}, { limit: 2 });
+      expect(page1.items).toHaveLength(2);
+      expect(page1.nextStartAfter).toBeDefined();
+
+      // Second page using cursor
+      const page2 = await repo.findPage(
+        {},
+        { limit: 2, startAfter: page1.nextStartAfter }
+      );
+      expect(page2.items).toHaveLength(2);
+      expect(page2.nextStartAfter).toBeDefined();
+      expect(page2.items[0].id).not.toBe(page1.items[0].id);
+
+      // Third page (last page with 1 item)
+      const page3 = await repo.findPage(
+        {},
+        { limit: 2, startAfter: page2.nextStartAfter }
+      );
+      expect(page3.items).toHaveLength(1);
+      expect(page3.nextStartAfter).toBeUndefined();
+    });
+
+    it('should work with filters', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'Alice', isActive: true }),
+        createTestEntity({ name: 'Bob', isActive: true }),
+        createTestEntity({ name: 'Charlie', isActive: false }),
+        createTestEntity({ name: 'David', isActive: true }),
+      ]);
+
+      const page = await repo.findPage({ isActive: true }, { limit: 2 });
+      expect(page.items).toHaveLength(2);
+      expect(page.items.every((u) => u.isActive)).toBe(true);
+    });
+
+    it('should work with projections', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'Alice', age: 25 }),
+        createTestEntity({ name: 'Bob', age: 30 }),
+      ]);
+
+      const page = await repo.findPage(
+        {},
+        { limit: 10, projection: { id: true, name: true } }
+      );
+
+      expect(page.items).toHaveLength(2);
+      expect(page.items[0]).toHaveProperty('id');
+      expect(page.items[0]).toHaveProperty('name');
+      expect(page.items[0]).not.toHaveProperty('age');
+    });
+
+    it('should work with custom orderBy', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'Charlie', age: 35 }),
+        createTestEntity({ name: 'Alice', age: 25 }),
+        createTestEntity({ name: 'Bob', age: 30 }),
+      ]);
+
+      const page = await repo.findPage(
+        {},
+        { limit: 10, orderBy: { name: 'asc' } }
+      );
+
+      expect(page.items.map((u) => u.name)).toEqual([
+        'Alice',
+        'Bob',
+        'Charlie',
+      ]);
+    });
+
+    it('should handle empty results', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      const page = await repo.findPage({ name: 'NonExistent' }, { limit: 10 });
+      expect(page.items).toHaveLength(0);
+      expect(page.nextStartAfter).toBeUndefined();
+    });
+
+    it('should handle scope breach with default empty behavior', async () => {
+      const scoped = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        scope: { tenantId: 'tenant-A' },
+      });
+
+      const page = await scoped.findPage(
+        { tenantId: 'tenant-B' },
+        { limit: 10 }
+      );
+      expect(page.items).toHaveLength(0);
+      expect(page.nextStartAfter).toBeUndefined();
+    });
+
+    it('should throw on scope breach when configured', async () => {
+      const scoped = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        scope: { tenantId: 'tenant-A' },
+      });
+
+      await expect(
+        scoped.findPage(
+          { tenantId: 'tenant-B' },
+          { limit: 10, onScopeBreach: 'error' }
+        )
+      ).rejects.toThrow('Scope breach detected in findPage filter');
+    });
+
+    it('should throw with invalid cursor', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await expect(
+        repo.findPage(
+          {},
+          { limit: 10, startAfter: 'invalid-cursor-that-does-not-exist' }
+        )
+      ).rejects.toThrow('Invalid startAfter cursor');
+    });
+
+    it('should work with large page sizes', async () => {
+      const repo = createSmartFirestoreRepo<TestEntity>({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'User 1' }),
+        createTestEntity({ name: 'User 2' }),
+        createTestEntity({ name: 'User 3' }),
+      ]);
+
+      const page = await repo.findPage({}, { limit: 100 });
+      expect(page.items).toHaveLength(3);
+      expect(page.nextStartAfter).toBeUndefined();
+    });
+  });
+
   describe('count', () => {
     it('should count entities matching the filter', async () => {
       const repo = createSmartFirestoreRepo({
@@ -3065,180 +3240,6 @@ describe('createSmartFirestoreRepo', function () {
       const raw2 = await rawTestCollection().doc(id).get();
       const data2 = convertFirestoreTimestamps(raw2.data());
       expect(data2._trace._at.getTime()).toBe(t.getTime());
-    });
-  });
-  describe('findPage', () => {
-    it('should return a page of results with pagination cursor', async () => {
-      const repo = createSmartFirestoreRepo<TestEntity>({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-      });
-
-      await repo.createMany([
-        createTestEntity({ name: 'Alice', age: 25 }),
-        createTestEntity({ name: 'Bob', age: 30 }),
-        createTestEntity({ name: 'Charlie', age: 35 }),
-        createTestEntity({ name: 'David', age: 40 }),
-        createTestEntity({ name: 'Eve', age: 45 }),
-      ]);
-
-      // First page
-      const page1 = await repo.findPage({}, { limit: 2 });
-      expect(page1.items).toHaveLength(2);
-      expect(page1.nextStartAfter).toBeDefined();
-
-      // Second page using cursor
-      const page2 = await repo.findPage(
-        {},
-        { limit: 2, startAfter: page1.nextStartAfter }
-      );
-      expect(page2.items).toHaveLength(2);
-      expect(page2.nextStartAfter).toBeDefined();
-      expect(page2.items[0].id).not.toBe(page1.items[0].id);
-
-      // Third page (last page with 1 item)
-      const page3 = await repo.findPage(
-        {},
-        { limit: 2, startAfter: page2.nextStartAfter }
-      );
-      expect(page3.items).toHaveLength(1);
-      expect(page3.nextStartAfter).toBeUndefined();
-    });
-
-    it('should work with filters', async () => {
-      const repo = createSmartFirestoreRepo<TestEntity>({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-      });
-
-      await repo.createMany([
-        createTestEntity({ name: 'Alice', isActive: true }),
-        createTestEntity({ name: 'Bob', isActive: true }),
-        createTestEntity({ name: 'Charlie', isActive: false }),
-        createTestEntity({ name: 'David', isActive: true }),
-      ]);
-
-      const page = await repo.findPage({ isActive: true }, { limit: 2 });
-      expect(page.items).toHaveLength(2);
-      expect(page.items.every((u) => u.isActive)).toBe(true);
-    });
-
-    it('should work with projections', async () => {
-      const repo = createSmartFirestoreRepo<TestEntity>({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-      });
-
-      await repo.createMany([
-        createTestEntity({ name: 'Alice', age: 25 }),
-        createTestEntity({ name: 'Bob', age: 30 }),
-      ]);
-
-      const page = await repo.findPage(
-        {},
-        { limit: 10, projection: { id: true, name: true } }
-      );
-
-      expect(page.items).toHaveLength(2);
-      expect(page.items[0]).toHaveProperty('id');
-      expect(page.items[0]).toHaveProperty('name');
-      expect(page.items[0]).not.toHaveProperty('age');
-    });
-
-    it('should work with custom orderBy', async () => {
-      const repo = createSmartFirestoreRepo<TestEntity>({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-      });
-
-      await repo.createMany([
-        createTestEntity({ name: 'Charlie', age: 35 }),
-        createTestEntity({ name: 'Alice', age: 25 }),
-        createTestEntity({ name: 'Bob', age: 30 }),
-      ]);
-
-      const page = await repo.findPage(
-        {},
-        { limit: 10, orderBy: { name: 'asc' } }
-      );
-
-      expect(page.items.map((u) => u.name)).toEqual([
-        'Alice',
-        'Bob',
-        'Charlie',
-      ]);
-    });
-
-    it('should handle empty results', async () => {
-      const repo = createSmartFirestoreRepo<TestEntity>({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-      });
-
-      const page = await repo.findPage({ name: 'NonExistent' }, { limit: 10 });
-      expect(page.items).toHaveLength(0);
-      expect(page.nextStartAfter).toBeUndefined();
-    });
-
-    it('should handle scope breach with default empty behavior', async () => {
-      const scoped = createSmartFirestoreRepo<TestEntity>({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-        scope: { tenantId: 'tenant-A' },
-      });
-
-      const page = await scoped.findPage(
-        { tenantId: 'tenant-B' },
-        { limit: 10 }
-      );
-      expect(page.items).toHaveLength(0);
-      expect(page.nextStartAfter).toBeUndefined();
-    });
-
-    it('should throw on scope breach when configured', async () => {
-      const scoped = createSmartFirestoreRepo<TestEntity>({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-        scope: { tenantId: 'tenant-A' },
-      });
-
-      await expect(
-        scoped.findPage(
-          { tenantId: 'tenant-B' },
-          { limit: 10, onScopeBreach: 'error' }
-        )
-      ).rejects.toThrow('Scope breach detected in findPage filter');
-    });
-
-    it('should throw with invalid cursor', async () => {
-      const repo = createSmartFirestoreRepo<TestEntity>({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-      });
-
-      await expect(
-        repo.findPage(
-          {},
-          { limit: 10, startAfter: 'invalid-cursor-that-does-not-exist' }
-        )
-      ).rejects.toThrow('Invalid startAfter cursor');
-    });
-
-    it('should work with large page sizes', async () => {
-      const repo = createSmartFirestoreRepo<TestEntity>({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-      });
-
-      await repo.createMany([
-        createTestEntity({ name: 'User 1' }),
-        createTestEntity({ name: 'User 2' }),
-        createTestEntity({ name: 'User 3' }),
-      ]);
-
-      const page = await repo.findPage({}, { limit: 100 });
-      expect(page.items).toHaveLength(3);
-      expect(page.nextStartAfter).toBeUndefined();
     });
   });
 });
