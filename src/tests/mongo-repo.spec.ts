@@ -1558,18 +1558,28 @@ describe('createSmartMongoRepo', function () {
     });
 
     describe('cursor pagination with custom orderBy', () => {
+      // Use deterministic IDs for predictable ordering
+      let idCounter = 0;
+      const deterministicIdGen = () =>
+        `id-${String(idCounter++).padStart(3, '0')}`;
+
+      beforeEach(() => {
+        idCounter = 0; // Reset counter before each test
+      });
+
       it('should paginate correctly with single field ascending order', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
+          options: { generateId: deterministicIdGen },
         });
 
         await repo.createMany([
-          createTestEntity({ name: 'Charlie', age: 35 }),
-          createTestEntity({ name: 'Alice', age: 25 }),
-          createTestEntity({ name: 'David', age: 40 }),
-          createTestEntity({ name: 'Bob', age: 30 }),
-          createTestEntity({ name: 'Eve', age: 45 }),
+          createTestEntity({ name: 'Charlie', age: 35 }), // id-000
+          createTestEntity({ name: 'Alice', age: 25 }), // id-001
+          createTestEntity({ name: 'David', age: 40 }), // id-002
+          createTestEntity({ name: 'Bob', age: 30 }), // id-003
+          createTestEntity({ name: 'Eve', age: 45 }), // id-004
         ]);
 
         // First page
@@ -1612,6 +1622,7 @@ describe('createSmartMongoRepo', function () {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
+          options: { generateId: deterministicIdGen },
         });
 
         await repo.createMany([
@@ -1662,6 +1673,7 @@ describe('createSmartMongoRepo', function () {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
+          options: { generateId: deterministicIdGen },
         });
 
         await repo.createMany([
@@ -1716,6 +1728,7 @@ describe('createSmartMongoRepo', function () {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
+          options: { generateId: deterministicIdGen },
         });
 
         await repo.createMany([
@@ -1766,6 +1779,7 @@ describe('createSmartMongoRepo', function () {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
+          options: { generateId: deterministicIdGen },
         });
 
         await repo.createMany([
@@ -1815,6 +1829,7 @@ describe('createSmartMongoRepo', function () {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
+          options: { generateId: deterministicIdGen },
         });
 
         await repo.createMany([
@@ -1854,6 +1869,7 @@ describe('createSmartMongoRepo', function () {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
+          options: { generateId: deterministicIdGen },
         });
 
         // Create multiple documents with the same age
@@ -1871,6 +1887,8 @@ describe('createSmartMongoRepo', function () {
         );
         expect(page1.items).toHaveLength(2);
         expect(page1.items.every((u) => u.age === 30)).toBe(true);
+        // With deterministic IDs, we know the exact order (sorted by _id as tiebreaker)
+        expect(page1.items.map((u) => u.id)).toEqual(['id-000', 'id-001']);
         expect(page1.nextStartAfter).toBeDefined();
 
         const page2 = await repo.findPage(
@@ -1883,11 +1901,7 @@ describe('createSmartMongoRepo', function () {
         );
         expect(page2.items).toHaveLength(2);
         expect(page2.items.every((u) => u.age === 30)).toBe(true);
-        // Ensure we didn't get duplicates
-        const page1Ids = page1.items.map((u) => u.id);
-        const page2Ids = page2.items.map((u) => u.id);
-        expect(page1Ids).not.toContain(page2Ids[0]);
-        expect(page1Ids).not.toContain(page2Ids[1]);
+        expect(page2.items.map((u) => u.id)).toEqual(['id-002', 'id-003']);
 
         const page3 = await repo.findPage(
           {},
@@ -1899,6 +1913,7 @@ describe('createSmartMongoRepo', function () {
         );
         expect(page3.items).toHaveLength(1);
         expect(page3.items[0].age).toBe(30);
+        expect(page3.items[0].id).toBe('id-004');
         expect(page3.nextStartAfter).toBeUndefined();
       });
 
@@ -1906,36 +1921,78 @@ describe('createSmartMongoRepo', function () {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
+          options: { generateId: deterministicIdGen },
         });
 
         await repo.createMany([
-          createTestEntity({ name: 'Alice', profile: { age: 35 } }),
-          createTestEntity({ name: 'Bob', profile: { age: 25 } }),
-          createTestEntity({ name: 'Charlie', profile: { age: 30 } }),
-          createTestEntity({ name: 'David', profile: { age: 40 } }),
+          createTestEntity({ name: 'A', metadata: { tags: [], notes: 'D' } }),
+          createTestEntity({ name: 'B', metadata: { tags: [], notes: 'B' } }),
+          createTestEntity({ name: 'C', metadata: { tags: [], notes: 'C' } }),
+          createTestEntity({ name: 'D', metadata: { tags: [], notes: 'A' } }),
         ]);
 
         const page1 = await repo.findPage(
           {},
-          { limit: 2, orderBy: { 'profile.age': 'asc' } }
+          { limit: 2, orderBy: { 'metadata.notes': 'asc' } }
         );
         expect(page1.items).toHaveLength(2);
-        expect(page1.items[0].profile?.age).toBe(25);
-        expect(page1.items[1].profile?.age).toBe(30);
+        expect(page1.items[0].metadata?.notes).toBe('A');
+        expect(page1.items[1].metadata?.notes).toBe('B');
         expect(page1.nextStartAfter).toBeDefined();
 
         const page2 = await repo.findPage(
           {},
           {
             limit: 2,
-            orderBy: { 'profile.age': 'asc' },
+            orderBy: { 'metadata.notes': 'asc' },
             startAfter: page1.nextStartAfter,
           }
         );
         expect(page2.items).toHaveLength(2);
-        expect(page2.items[0].profile?.age).toBe(35);
-        expect(page2.items[1].profile?.age).toBe(40);
+        expect(page2.items[0].metadata?.notes).toBe('C');
+        expect(page2.items[1].metadata?.notes).toBe('D');
         expect(page2.nextStartAfter).toBeUndefined();
+      });
+
+      it('should correctly handle id in orderBy and ignore fields after it', async () => {
+        const repo = createSmartMongoRepo({
+          collection: testCollection(),
+          mongoClient: mongo.client,
+          options: { generateId: deterministicIdGen },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'User1', age: 30 }),
+          createTestEntity({ name: 'User2', age: 30 }),
+          createTestEntity({ name: 'User3', age: 30 }),
+          createTestEntity({ name: 'User4', age: 30 }),
+        ]);
+
+        // orderBy includes id explicitly, followed by name (which should be ignored)
+        const page1 = await repo.findPage(
+          {},
+          { limit: 2, orderBy: { age: 'asc', id: 'asc', name: 'desc' } }
+        );
+        expect(page1.items).toHaveLength(2);
+        expect(page1.nextStartAfter).toBeDefined();
+
+        const page2 = await repo.findPage(
+          {},
+          {
+            limit: 2,
+            orderBy: { age: 'asc', id: 'asc', name: 'desc' },
+            startAfter: page1.nextStartAfter,
+          }
+        );
+        expect(page2.items).toHaveLength(2);
+
+        // Verify no duplicates
+        const allIds = [
+          ...page1.items.map((u) => u.id),
+          ...page2.items.map((u) => u.id),
+        ];
+        const uniqueIds = new Set(allIds);
+        expect(uniqueIds.size).toBe(4);
       });
     });
   });
