@@ -1348,10 +1348,25 @@ describe('createSmartMongoRepo', function () {
   });
 
   describe('findPage', () => {
+    const pages = async (repo: any, filter: any, opts: any) => {
+      const result: any[] = [];
+      let page = await repo.findPage(filter, opts);
+      while (page.nextStartAfter) {
+        result.push(page.items);
+        page = await repo.findPage(filter, {
+          ...opts,
+          startAfter: page.nextStartAfter,
+        });
+      }
+      result.push(page.items);
+      return result;
+    };
+
     it('should return a page of results with pagination cursor', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
+        options: { generateId: ascendingIds() }, // as we're implicitly sorting by id
       });
 
       await repo.createMany([
@@ -1362,91 +1377,81 @@ describe('createSmartMongoRepo', function () {
         createTestEntity({ name: 'Eve', age: 45 }),
       ]);
 
-      // First page
-      const page1 = await repo.findPage({}, { limit: 2 });
-      expect(page1.items).toHaveLength(2);
-      expect(page1.nextStartAfter).toBeDefined();
-
-      // Second page using cursor
-      const page2 = await repo.findPage(
+      const result = await pages(
+        repo,
         {},
-        { limit: 2, startAfter: page1.nextStartAfter }
+        { limit: 2, projection: { name: true } }
       );
-      expect(page2.items).toHaveLength(2);
-      expect(page2.nextStartAfter).toBeDefined();
-      expect(page2.items[0].id).not.toBe(page1.items[0].id);
 
-      // Third page (last page with 1 item)
-      const page3 = await repo.findPage(
-        {},
-        { limit: 2, startAfter: page2.nextStartAfter }
-      );
-      expect(page3.items).toHaveLength(1);
-      expect(page3.nextStartAfter).toBeUndefined();
+      expect(result).toEqual([
+        [{ name: 'Alice' }, { name: 'Bob' }],
+        [{ name: 'Charlie' }, { name: 'David' }],
+        [{ name: 'Eve' }],
+      ]);
     });
 
     it('should work with filters', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
+        options: { generateId: ascendingIds() },
       });
 
       await repo.createMany([
         createTestEntity({ name: 'Alice', isActive: true }),
-        createTestEntity({ name: 'Bob', isActive: true }),
+        createTestEntity({ name: 'Bob', isActive: false }),
         createTestEntity({ name: 'Charlie', isActive: false }),
         createTestEntity({ name: 'David', isActive: true }),
       ]);
 
-      const page = await repo.findPage({ isActive: true }, { limit: 2 });
-      expect(page.items).toHaveLength(2);
-      expect(page.items.every((u) => u.isActive)).toBe(true);
-    });
-
-    it('should work with projections', async () => {
-      const repo = createSmartMongoRepo({
-        collection: testCollection(),
-        mongoClient: mongo.client,
-      });
-
-      await repo.createMany([
-        createTestEntity({ name: 'Alice', age: 25 }),
-        createTestEntity({ name: 'Bob', age: 30 }),
-      ]);
-
-      const page = await repo.findPage(
-        {},
-        { limit: 10, projection: { id: true, name: true } }
+      const result = await pages(
+        repo,
+        { isActive: true },
+        { limit: 1, projection: { name: true } } // implicit sort by id
       );
 
-      expect(page.items).toHaveLength(2);
-      expect(page.items[0]).toHaveProperty('id');
-      expect(page.items[0]).toHaveProperty('name');
-      expect(page.items[0]).not.toHaveProperty('age');
+      expect(result).toEqual([[{ name: 'Alice' }], [{ name: 'David' }]]);
     });
 
     it('should work with custom orderBy', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
+        options: { generateId: ascendingIds() },
       });
 
       await repo.createMany([
-        createTestEntity({ name: 'Charlie', age: 35 }),
-        createTestEntity({ name: 'Alice', age: 25 }),
-        createTestEntity({ name: 'Bob', age: 30 }),
+        createTestEntity({ name: 'Charlie', age: 35 }), // id-000
+        createTestEntity({ name: 'Charlie', age: 35 }), // id-001
+        createTestEntity({ name: 'Charlie', age: 36 }), // id-002
+        createTestEntity({ name: 'Charlie', age: 37 }), // id-003
+        createTestEntity({ name: 'Alice', age: 25 }), // id-004
+        createTestEntity({ name: 'Alice', age: 27 }), // id-005
+        createTestEntity({ name: 'Bob', age: 30 }), // id-006
+        createTestEntity({ name: 'Bob', age: 35 }), // id-007
+        createTestEntity({ name: 'Bob', age: 40 }), // id-008
       ]);
 
       const page = await repo.findPage(
         {},
-        { limit: 10, orderBy: { name: 'asc' } }
+        {
+          limit: 100,
+          orderBy: { name: 'asc', age: 'desc', id: 'desc', email: 'asc' }, // email will be ignored
+        }
       );
 
-      expect(page.items.map((u) => u.name)).toEqual([
-        'Alice',
-        'Bob',
-        'Charlie',
+      expect(page.items.map((u) => `${u.name}-${u.age}-${u.id}`)).toEqual([
+        'Alice-27-id-005',
+        'Alice-25-id-004',
+        'Bob-40-id-008',
+        'Bob-35-id-007',
+        'Bob-30-id-006',
+        'Charlie-37-id-003',
+        'Charlie-36-id-002',
+        'Charlie-35-id-001',
+        'Charlie-35-id-000',
       ]);
+      expect(page.nextStartAfter).toBeUndefined();
     });
 
     it('should handle empty results', async () => {
@@ -1490,15 +1495,29 @@ describe('createSmartMongoRepo', function () {
       ).rejects.toThrow('Scope breach detected in findPage filter');
     });
 
-    it('should throw with invalid cursor', async () => {
+    it('should throw with invalid cursor (not found)', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
       });
 
       await expect(
-        repo.findPage({}, { limit: 10, startAfter: 'invalid-cursor' })
-      ).rejects.toThrow('Invalid startAfter cursor');
+        repo.findPage(
+          {},
+          { limit: 10, startAfter: new ObjectId().toHexString() }
+        )
+      ).rejects.toThrow('Invalid startAfter cursor: document not found');
+    });
+
+    it('should throw with invalid cursor (no ObjectId)', async () => {
+      const repo = createSmartMongoRepo({
+        collection: testCollection(),
+        mongoClient: mongo.client,
+      });
+
+      await expect(
+        repo.findPage({}, { limit: 10, startAfter: 'not-an-object-id' })
+      ).rejects.toThrow(/Invalid startAfter cursor: input must be/);
     });
 
     it('should work with large page sizes', async () => {
@@ -1537,41 +1556,28 @@ describe('createSmartMongoRepo', function () {
         describe: 'active users',
       };
 
-      // First page with specification
       const page1 = await repo.findPageBySpec(activeUsersSpec, {
         limit: 2,
         orderBy: { name: 'asc' },
       });
-      expect(page1.items).toHaveLength(2);
-      expect(page1.items[0].name).toBe('Alice');
-      expect(page1.items.every((u) => u.isActive)).toBe(true);
+      expect(page1.items.map((i) => i.name)).toEqual(['Alice', 'Bob']);
       expect(page1.nextStartAfter).toBeDefined();
 
-      // Second page using cursor
       const page2 = await repo.findPageBySpec(activeUsersSpec, {
         limit: 2,
         orderBy: { name: 'asc' },
         startAfter: page1.nextStartAfter,
       });
-      expect(page2.items).toHaveLength(2);
-      expect(page2.items.every((u) => u.isActive)).toBe(true);
+      expect(page2.items.map((i) => i.name)).toEqual(['David', 'Eve']);
+      expect(page2.nextStartAfter).toBeUndefined();
     });
 
     describe('cursor pagination with custom orderBy', () => {
-      // Use deterministic IDs for predictable ordering
-      let idCounter = 0;
-      const deterministicIdGen = () =>
-        `id-${String(idCounter++).padStart(3, '0')}`;
-
-      beforeEach(() => {
-        idCounter = 0; // Reset counter before each test
-      });
-
       it('should paginate correctly with single field ascending order', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
-          options: { generateId: deterministicIdGen },
+          options: { generateId: ascendingIds() },
         });
 
         await repo.createMany([
@@ -1580,49 +1586,31 @@ describe('createSmartMongoRepo', function () {
           createTestEntity({ name: 'David', age: 40 }), // id-002
           createTestEntity({ name: 'Bob', age: 30 }), // id-003
           createTestEntity({ name: 'Eve', age: 45 }), // id-004
+          createTestEntity({ name: 'Bob', age: 45 }), // id-005
         ]);
 
-        // First page
-        const page1 = await repo.findPage(
+        const result = await pages(
+          repo,
           {},
-          { limit: 2, orderBy: { name: 'asc' } }
+          { limit: 4, orderBy: { name: 'asc' }, projection: { id: true } }
         );
-        expect(page1.items).toHaveLength(2);
-        expect(page1.items.map((u) => u.name)).toEqual(['Alice', 'Bob']);
-        expect(page1.nextStartAfter).toBeDefined();
 
-        // Second page
-        const page2 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { name: 'asc' },
-            startAfter: page1.nextStartAfter,
-          }
-        );
-        expect(page2.items).toHaveLength(2);
-        expect(page2.items.map((u) => u.name)).toEqual(['Charlie', 'David']);
-        expect(page2.nextStartAfter).toBeDefined();
-
-        // Third page
-        const page3 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { name: 'asc' },
-            startAfter: page2.nextStartAfter,
-          }
-        );
-        expect(page3.items).toHaveLength(1);
-        expect(page3.items.map((u) => u.name)).toEqual(['Eve']);
-        expect(page3.nextStartAfter).toBeUndefined();
+        expect(result).toEqual([
+          [
+            { id: 'id-001' },
+            { id: 'id-003' },
+            { id: 'id-005' },
+            { id: 'id-000' },
+          ],
+          [{ id: 'id-002' }, { id: 'id-004' }],
+        ]);
       });
 
       it('should paginate correctly with single field descending order', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
-          options: { generateId: deterministicIdGen },
+          options: { generateId: ascendingIds() },
         });
 
         await repo.createMany([
@@ -1633,47 +1621,24 @@ describe('createSmartMongoRepo', function () {
           createTestEntity({ name: 'Eve', age: 45 }),
         ]);
 
-        // First page
-        const page1 = await repo.findPage(
+        const result = await pages(
+          repo,
           {},
-          { limit: 2, orderBy: { name: 'desc' } }
+          { limit: 2, orderBy: { name: 'desc' }, projection: { name: true } }
         );
-        expect(page1.items).toHaveLength(2);
-        expect(page1.items.map((u) => u.name)).toEqual(['Eve', 'David']);
-        expect(page1.nextStartAfter).toBeDefined();
 
-        // Second page
-        const page2 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { name: 'desc' },
-            startAfter: page1.nextStartAfter,
-          }
-        );
-        expect(page2.items).toHaveLength(2);
-        expect(page2.items.map((u) => u.name)).toEqual(['Charlie', 'Bob']);
-        expect(page2.nextStartAfter).toBeDefined();
-
-        // Third page
-        const page3 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { name: 'desc' },
-            startAfter: page2.nextStartAfter,
-          }
-        );
-        expect(page3.items).toHaveLength(1);
-        expect(page3.items.map((u) => u.name)).toEqual(['Alice']);
-        expect(page3.nextStartAfter).toBeUndefined();
+        expect(result).toEqual([
+          [{ name: 'Eve' }, { name: 'David' }],
+          [{ name: 'Charlie' }, { name: 'Bob' }],
+          [{ name: 'Alice' }],
+        ]);
       });
 
       it('should paginate correctly with multi-field ordering (mixed directions)', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
-          options: { generateId: deterministicIdGen },
+          options: { generateId: ascendingIds() },
         });
 
         await repo.createMany([
@@ -1684,51 +1649,34 @@ describe('createSmartMongoRepo', function () {
           createTestEntity({ name: 'Eve', age: 35, isActive: false }),
         ]);
 
-        // Order by age DESC, then name ASC
-        const page1 = await repo.findPage(
-          {},
-          { limit: 2, orderBy: { age: 'desc', name: 'asc' } }
-        );
-        expect(page1.items).toHaveLength(2);
-        expect(page1.items[0].age).toBe(35);
-        expect(page1.items[0].name).toBe('Eve');
-        expect(page1.items[1].age).toBe(30);
-        expect(page1.items[1].name).toBe('Alice');
-        expect(page1.nextStartAfter).toBeDefined();
-
-        const page2 = await repo.findPage(
+        const result = await pages(
+          repo,
           {},
           {
             limit: 2,
             orderBy: { age: 'desc', name: 'asc' },
-            startAfter: page1.nextStartAfter,
+            projection: { name: true, age: true },
           }
         );
-        expect(page2.items).toHaveLength(2);
-        expect(page2.items[0].age).toBe(30);
-        expect(page2.items[0].name).toBe('Charlie');
-        expect(page2.items[1].age).toBe(25);
-        expect(page2.items[1].name).toBe('Bob');
 
-        const page3 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { age: 'desc', name: 'asc' },
-            startAfter: page2.nextStartAfter,
-          }
-        );
-        expect(page3.items).toHaveLength(1);
-        expect(page3.items[0].age).toBe(25);
-        expect(page3.items[0].name).toBe('David');
-        expect(page3.nextStartAfter).toBeUndefined();
+        expect(result).toEqual([
+          [
+            { name: 'Eve', age: 35 },
+            { name: 'Alice', age: 30 },
+          ],
+          [
+            { name: 'Charlie', age: 30 },
+            { name: 'Bob', age: 25 },
+          ],
+          [{ name: 'David', age: 25 }],
+        ]);
       });
 
       it('should handle null values correctly in ascending order', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
-          options: { generateId: deterministicIdGen },
+          options: { generateId: ascendingIds() },
         });
 
         await repo.createMany([
@@ -1739,47 +1687,28 @@ describe('createSmartMongoRepo', function () {
           createTestEntity({ name: 'Eve', age: 35 }),
         ]);
 
-        // In MongoDB, null/undefined sort before all values in ASC order
-        const page1 = await repo.findPage(
+        const result = await pages(
+          repo,
           {},
-          { limit: 2, orderBy: { age: 'asc' } }
+          { limit: 4, orderBy: { age: 'asc' }, projection: { name: true } }
         );
-        expect(page1.items).toHaveLength(2);
-        // First two should be the ones with undefined age
-        expect(page1.items[0].age).toBeUndefined();
-        expect(page1.items[1].age).toBeUndefined();
-        expect(page1.nextStartAfter).toBeDefined();
 
-        const page2 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { age: 'asc' },
-            startAfter: page1.nextStartAfter,
-          }
-        );
-        expect(page2.items).toHaveLength(2);
-        expect(page2.items[0].age).toBe(25);
-        expect(page2.items[1].age).toBe(30);
-
-        const page3 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { age: 'asc' },
-            startAfter: page2.nextStartAfter,
-          }
-        );
-        expect(page3.items).toHaveLength(1);
-        expect(page3.items[0].age).toBe(35);
-        expect(page3.nextStartAfter).toBeUndefined();
+        expect(result).toEqual([
+          [
+            { name: 'Bob' },
+            { name: 'David' },
+            { name: 'Alice' },
+            { name: 'Charlie' },
+          ],
+          [{ name: 'Eve' }],
+        ]);
       });
 
       it('should handle null values correctly in descending order', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
-          options: { generateId: deterministicIdGen },
+          options: { generateId: ascendingIds() },
         });
 
         await repo.createMany([
@@ -1790,46 +1719,28 @@ describe('createSmartMongoRepo', function () {
           createTestEntity({ name: 'Eve', age: 35 }),
         ]);
 
-        // In MongoDB, null/undefined sort after all values in DESC order
-        const page1 = await repo.findPage(
+        const result = await pages(
+          repo,
           {},
-          { limit: 2, orderBy: { age: 'desc' } }
+          { limit: 4, orderBy: { age: 'desc' }, projection: { name: true } }
         );
-        expect(page1.items).toHaveLength(2);
-        expect(page1.items[0].age).toBe(35);
-        expect(page1.items[1].age).toBe(30);
-        expect(page1.nextStartAfter).toBeDefined();
 
-        const page2 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { age: 'desc' },
-            startAfter: page1.nextStartAfter,
-          }
-        );
-        expect(page2.items).toHaveLength(2);
-        expect(page2.items[0].age).toBe(25);
-        expect(page2.items[1].age).toBeUndefined();
-
-        const page3 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { age: 'desc' },
-            startAfter: page2.nextStartAfter,
-          }
-        );
-        expect(page3.items).toHaveLength(1);
-        expect(page3.items[0].age).toBeUndefined();
-        expect(page3.nextStartAfter).toBeUndefined();
+        expect(result).toEqual([
+          [
+            { name: 'Eve' },
+            { name: 'Charlie' },
+            { name: 'Alice' },
+            { name: 'Bob' },
+          ],
+          [{ name: 'David' }],
+        ]);
       });
 
       it('should work correctly with filters and custom ordering', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
-          options: { generateId: deterministicIdGen },
+          options: { generateId: ascendingIds() },
         });
 
         await repo.createMany([
@@ -1841,38 +1752,23 @@ describe('createSmartMongoRepo', function () {
           createTestEntity({ name: 'Frank', age: 50, isActive: false }),
         ]);
 
-        // Filter active users and order by age descending
-        const page1 = await repo.findPage(
+        const result = await pages(
+          repo,
           { isActive: true },
-          { limit: 2, orderBy: { age: 'desc' } }
+          { limit: 20, orderBy: { age: 'desc' }, projection: { name: true } }
         );
-        expect(page1.items).toHaveLength(2);
-        expect(page1.items.every((u) => u.isActive)).toBe(true);
-        expect(page1.items.map((u) => u.age)).toEqual([45, 35]);
-        expect(page1.nextStartAfter).toBeDefined();
-
-        const page2 = await repo.findPage(
-          { isActive: true },
-          {
-            limit: 2,
-            orderBy: { age: 'desc' },
-            startAfter: page1.nextStartAfter,
-          }
-        );
-        expect(page2.items).toHaveLength(1);
-        expect(page2.items.every((u) => u.isActive)).toBe(true);
-        expect(page2.items.map((u) => u.age)).toEqual([25]);
-        expect(page2.nextStartAfter).toBeUndefined();
+        expect(result).toEqual([
+          [{ name: 'Eve' }, { name: 'Charlie' }, { name: 'Alice' }],
+        ]);
       });
 
       it('should handle documents with same sort field values using _id as tiebreaker', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
-          options: { generateId: deterministicIdGen },
+          options: { generateId: ascendingIds() },
         });
 
-        // Create multiple documents with the same age
         await repo.createMany([
           createTestEntity({ name: 'User1', age: 30 }),
           createTestEntity({ name: 'User2', age: 30 }),
@@ -1881,47 +1777,24 @@ describe('createSmartMongoRepo', function () {
           createTestEntity({ name: 'User5', age: 30 }),
         ]);
 
-        const page1 = await repo.findPage(
+        const result = await pages(
+          repo,
           {},
-          { limit: 2, orderBy: { age: 'asc' } }
+          { limit: 2, orderBy: { age: 'asc' }, projection: { name: true } }
         );
-        expect(page1.items).toHaveLength(2);
-        expect(page1.items.every((u) => u.age === 30)).toBe(true);
-        // With deterministic IDs, we know the exact order (sorted by _id as tiebreaker)
-        expect(page1.items.map((u) => u.id)).toEqual(['id-000', 'id-001']);
-        expect(page1.nextStartAfter).toBeDefined();
 
-        const page2 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { age: 'asc' },
-            startAfter: page1.nextStartAfter,
-          }
-        );
-        expect(page2.items).toHaveLength(2);
-        expect(page2.items.every((u) => u.age === 30)).toBe(true);
-        expect(page2.items.map((u) => u.id)).toEqual(['id-002', 'id-003']);
-
-        const page3 = await repo.findPage(
-          {},
-          {
-            limit: 2,
-            orderBy: { age: 'asc' },
-            startAfter: page2.nextStartAfter,
-          }
-        );
-        expect(page3.items).toHaveLength(1);
-        expect(page3.items[0].age).toBe(30);
-        expect(page3.items[0].id).toBe('id-004');
-        expect(page3.nextStartAfter).toBeUndefined();
+        expect(result).toEqual([
+          [{ name: 'User1' }, { name: 'User2' }],
+          [{ name: 'User3' }, { name: 'User4' }],
+          [{ name: 'User5' }],
+        ]);
       });
 
       it('should work with nested field paths in orderBy', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
-          options: { generateId: deterministicIdGen },
+          options: { generateId: ascendingIds() },
         });
 
         await repo.createMany([
@@ -1931,68 +1804,51 @@ describe('createSmartMongoRepo', function () {
           createTestEntity({ name: 'D', metadata: { tags: [], notes: 'A' } }),
         ]);
 
-        const page1 = await repo.findPage(
-          {},
-          { limit: 2, orderBy: { 'metadata.notes': 'asc' } }
-        );
-        expect(page1.items).toHaveLength(2);
-        expect(page1.items[0].metadata?.notes).toBe('A');
-        expect(page1.items[1].metadata?.notes).toBe('B');
-        expect(page1.nextStartAfter).toBeDefined();
-
-        const page2 = await repo.findPage(
+        const result = await pages(
+          repo,
           {},
           {
             limit: 2,
             orderBy: { 'metadata.notes': 'asc' },
-            startAfter: page1.nextStartAfter,
+            projection: { name: true },
           }
         );
-        expect(page2.items).toHaveLength(2);
-        expect(page2.items[0].metadata?.notes).toBe('C');
-        expect(page2.items[1].metadata?.notes).toBe('D');
-        expect(page2.nextStartAfter).toBeUndefined();
+
+        expect(result).toEqual([
+          [{ name: 'D' }, { name: 'B' }],
+          [{ name: 'C' }, { name: 'A' }],
+        ]);
       });
 
       it('should correctly handle id in orderBy and ignore fields after it', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
-          options: { generateId: deterministicIdGen },
+          options: { generateId: ascendingIds() },
         });
 
         await repo.createMany([
           createTestEntity({ name: 'User1', age: 30 }),
           createTestEntity({ name: 'User2', age: 30 }),
-          createTestEntity({ name: 'User3', age: 30 }),
+          createTestEntity({ name: 'User3', age: 33 }),
           createTestEntity({ name: 'User4', age: 30 }),
         ]);
 
         // orderBy includes id explicitly, followed by name (which should be ignored)
-        const page1 = await repo.findPage(
-          {},
-          { limit: 2, orderBy: { age: 'asc', id: 'asc', name: 'desc' } }
-        );
-        expect(page1.items).toHaveLength(2);
-        expect(page1.nextStartAfter).toBeDefined();
-
-        const page2 = await repo.findPage(
+        const result = await pages(
+          repo,
           {},
           {
             limit: 2,
             orderBy: { age: 'asc', id: 'asc', name: 'desc' },
-            startAfter: page1.nextStartAfter,
+            projection: { name: true },
           }
         );
-        expect(page2.items).toHaveLength(2);
 
-        // Verify no duplicates
-        const allIds = [
-          ...page1.items.map((u) => u.id),
-          ...page2.items.map((u) => u.id),
-        ];
-        const uniqueIds = new Set(allIds);
-        expect(uniqueIds.size).toBe(4);
+        expect(result).toEqual([
+          [{ name: 'User1' }, { name: 'User2' }],
+          [{ name: 'User4' }, { name: 'User3' }],
+        ]);
       });
     });
   });
@@ -4049,4 +3905,10 @@ function createTestEntity(overrides: Partial<TestEntity> = {}): TestEntity {
     },
     ...overrides,
   };
+}
+
+// gives IDs id-000, id-001, id-002, etc.
+function ascendingIds() {
+  let idCounter = 0;
+  return () => `id-${String(idCounter++).padStart(3, '0')}`;
 }
