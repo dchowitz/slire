@@ -741,8 +741,6 @@ export function createSmartMongoRepo<
           throw new Error(`Invalid startAfter cursor: document not found`);
         }
 
-        console.log('startAfterDoc', startAfterDoc);
-
         mongoFilter = {
           $and: [
             mongoFilter,
