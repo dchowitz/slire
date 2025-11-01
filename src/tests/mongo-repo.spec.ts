@@ -9,6 +9,7 @@ import {
   Specification,
 } from '../lib/smart-repo';
 import { mongo, setupMongo, teardownMongo } from './mongo-fixture';
+import { ascendingIds, pages } from './utils';
 
 describe('createSmartMongoRepo', function () {
   jest.setTimeout(60 * 1000);
@@ -1348,20 +1349,6 @@ describe('createSmartMongoRepo', function () {
   });
 
   describe('findPage', () => {
-    const pages = async (repo: any, filter: any, opts: any) => {
-      const result: any[] = [];
-      let page = await repo.findPage(filter, opts);
-      while (page.nextCursor) {
-        result.push(page.items);
-        page = await repo.findPage(filter, {
-          ...opts,
-          cursor: page.nextCursor,
-        });
-      }
-      result.push(page.items);
-      return result;
-    };
-
     it('should return a page of results with pagination cursor', async () => {
       const repo = createSmartMongoRepo({
         collection: testCollection(),
@@ -1737,7 +1724,7 @@ describe('createSmartMongoRepo', function () {
         ]);
       });
 
-      it('should handle null values correctly in ascending order', async () => {
+      it('should handle nullish values correctly in ascending order', async () => {
         const repo = createSmartMongoRepo({
           collection: testCollection(),
           mongoClient: mongo.client,
@@ -1746,7 +1733,7 @@ describe('createSmartMongoRepo', function () {
 
         await repo.createMany([
           createTestEntity({ name: 'Alice', age: 25 }),
-          createTestEntity({ name: 'Bob', age: undefined as any }),
+          createTestEntity({ name: 'Bob', age: null as any }),
           createTestEntity({ name: 'Charlie', age: 30 }),
           createTestEntity({ name: 'David', age: undefined as any }),
           createTestEntity({ name: 'Eve', age: 35 }),
@@ -1778,7 +1765,7 @@ describe('createSmartMongoRepo', function () {
 
         await repo.createMany([
           createTestEntity({ name: 'Alice', age: 25 }),
-          createTestEntity({ name: 'Bob', age: undefined as any }),
+          createTestEntity({ name: 'Bob', age: null as any }),
           createTestEntity({ name: 'Charlie', age: 30 }),
           createTestEntity({ name: 'David', age: undefined as any }),
           createTestEntity({ name: 'Eve', age: 35 }),
@@ -3970,10 +3957,4 @@ function createTestEntity(overrides: Partial<TestEntity> = {}): TestEntity {
     },
     ...overrides,
   };
-}
-
-// gives IDs id-000, id-001, id-002, etc.
-function ascendingIds() {
-  let idCounter = 0;
-  return () => `id-${String(idCounter++).padStart(3, '0')}`;
 }

@@ -16,6 +16,7 @@ import {
   setupFirestore,
   teardownFirestore,
 } from './firestore-fixture';
+import { ascendingIds, pages } from './utils';
 
 describe('createSmartFirestoreRepo', function () {
   jest.setTimeout(60 * 1000);
@@ -1449,6 +1450,7 @@ describe('createSmartFirestoreRepo', function () {
       const repo = createSmartFirestoreRepo<TestEntity>({
         collection: testCollection(),
         firestore: firestore.firestore,
+        options: { generateId: ascendingIds() },
       });
 
       await repo.createMany([
@@ -1459,91 +1461,81 @@ describe('createSmartFirestoreRepo', function () {
         createTestEntity({ name: 'Eve', age: 45 }),
       ]);
 
-      // First page
-      const page1 = await repo.findPage({}, { limit: 2 });
-      expect(page1.items).toHaveLength(2);
-      expect(page1.nextCursor).toBeDefined();
-
-      // Second page using cursor
-      const page2 = await repo.findPage(
+      const result = await pages(
+        repo,
         {},
-        { limit: 2, cursor: page1.nextCursor }
+        { limit: 2, projection: { name: true } }
       );
-      expect(page2.items).toHaveLength(2);
-      expect(page2.nextCursor).toBeDefined();
-      expect(page2.items[0].id).not.toBe(page1.items[0].id);
 
-      // Third page (last page with 1 item)
-      const page3 = await repo.findPage(
-        {},
-        { limit: 2, cursor: page2.nextCursor }
-      );
-      expect(page3.items).toHaveLength(1);
-      expect(page3.nextCursor).toBeUndefined();
+      expect(result).toEqual([
+        [{ name: 'Alice' }, { name: 'Bob' }],
+        [{ name: 'Charlie' }, { name: 'David' }],
+        [{ name: 'Eve' }],
+      ]);
     });
 
     it('should work with filters', async () => {
       const repo = createSmartFirestoreRepo<TestEntity>({
         collection: testCollection(),
         firestore: firestore.firestore,
+        options: { generateId: ascendingIds() },
       });
 
       await repo.createMany([
         createTestEntity({ name: 'Alice', isActive: true }),
-        createTestEntity({ name: 'Bob', isActive: true }),
+        createTestEntity({ name: 'Bob', isActive: false }),
         createTestEntity({ name: 'Charlie', isActive: false }),
         createTestEntity({ name: 'David', isActive: true }),
       ]);
 
-      const page = await repo.findPage({ isActive: true }, { limit: 2 });
-      expect(page.items).toHaveLength(2);
-      expect(page.items.every((u) => u.isActive)).toBe(true);
-    });
-
-    it('should work with projections', async () => {
-      const repo = createSmartFirestoreRepo<TestEntity>({
-        collection: testCollection(),
-        firestore: firestore.firestore,
-      });
-
-      await repo.createMany([
-        createTestEntity({ name: 'Alice', age: 25 }),
-        createTestEntity({ name: 'Bob', age: 30 }),
-      ]);
-
-      const page = await repo.findPage(
-        {},
-        { limit: 10, projection: { id: true, name: true } }
+      const result = await pages(
+        repo,
+        { isActive: true },
+        { limit: 1, projection: { name: true } } // implicit sort by id
       );
 
-      expect(page.items).toHaveLength(2);
-      expect(page.items[0]).toHaveProperty('id');
-      expect(page.items[0]).toHaveProperty('name');
-      expect(page.items[0]).not.toHaveProperty('age');
+      expect(result).toEqual([[{ name: 'Alice' }], [{ name: 'David' }]]);
     });
 
     it('should work with custom orderBy', async () => {
-      const repo = createSmartFirestoreRepo<TestEntity>({
+      const repo = createSmartFirestoreRepo({
         collection: testCollection(),
         firestore: firestore.firestore,
+        options: { generateId: ascendingIds(), mirrorId: true },
       });
 
       await repo.createMany([
-        createTestEntity({ name: 'Charlie', age: 35 }),
-        createTestEntity({ name: 'Alice', age: 25 }),
-        createTestEntity({ name: 'Bob', age: 30 }),
+        createTestEntity({ name: 'Charlie', age: 35 }), // id-000
+        createTestEntity({ name: 'Charlie', age: 35 }), // id-001
+        createTestEntity({ name: 'Charlie', age: 36 }), // id-002
+        createTestEntity({ name: 'Charlie', age: 37 }), // id-003
+        createTestEntity({ name: 'Alice', age: 25 }), // id-004
+        createTestEntity({ name: 'Alice', age: 27 }), // id-005
+        createTestEntity({ name: 'Bob', age: 30 }), // id-006
+        createTestEntity({ name: 'Bob', age: 35 }), // id-007
+        createTestEntity({ name: 'Bob', age: 40 }), // id-008
       ]);
 
       const page = await repo.findPage(
         {},
-        { limit: 10, orderBy: { name: 'asc' } }
+        {
+          limit: 100,
+          orderBy: { name: 'asc', age: 'desc', id: 'desc', email: 'asc' }, // email will be ignored
+        }
       );
 
-      expect(page.items.map((u) => u.name)).toEqual([
-        'Alice',
-        'Bob',
-        'Charlie',
+      expect(page.items.map((u) => `${u.name}-${u.age}-${u.id}`)).toEqual([
+        'Alice-27-id-005',
+        'Alice-25-id-004',
+        'Bob-40-id-008',
+        'Bob-35-id-007',
+        'Bob-30-id-006',
+        'Charlie-37-id-003',
+        'Charlie-36-id-002',
+        'Charlie-35-id-001',
+        'Charlie-35-id-000',
       ]);
+      expect(page.nextCursor).toBeUndefined();
     });
 
     it('should handle empty results', async () => {
@@ -1587,18 +1579,49 @@ describe('createSmartFirestoreRepo', function () {
       ).rejects.toThrow('Scope breach detected in findPage filter');
     });
 
-    it('should throw with invalid cursor', async () => {
+    it('should throw with invalid cursor (not found)', async () => {
       const repo = createSmartFirestoreRepo<TestEntity>({
         collection: testCollection(),
         firestore: firestore.firestore,
       });
 
       await expect(
-        repo.findPage(
-          {},
-          { limit: 10, cursor: 'invalid-cursor-that-does-not-exist' }
-        )
-      ).rejects.toThrow('Invalid cursor');
+        repo.findPage({}, { limit: 10, cursor: 'does-not-exist' })
+      ).rejects.toThrow('Invalid cursor: document not found');
+    });
+
+    it('should throw with invalid cursor (scope breach)', async () => {
+      const unscoped = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      const id = await unscoped.create(createTestEntity({ tenantId: 'acme' }));
+
+      const scoped = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        scope: { tenantId: 'tenant-A' },
+      });
+
+      await expect(
+        scoped.findPage({}, { limit: 10, cursor: id })
+      ).rejects.toThrow('Invalid cursor: document not found');
+    });
+
+    it('should throw with invalid cursor (soft-deleted)', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+        options: { softDelete: true },
+      });
+
+      const id = await repo.create(createTestEntity());
+      await repo.delete(id);
+
+      await expect(
+        repo.findPage({}, { limit: 10, cursor: id })
+      ).rejects.toThrow('Invalid cursor: document not found');
     });
 
     it('should work with large page sizes', async () => {
@@ -1615,6 +1638,40 @@ describe('createSmartFirestoreRepo', function () {
 
       const page = await repo.findPage({}, { limit: 100 });
       expect(page.items).toHaveLength(3);
+      expect(page.nextCursor).toBeUndefined();
+    });
+
+    it('should work with limit 0', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'User 1' }),
+        createTestEntity({ name: 'User 2' }),
+        createTestEntity({ name: 'User 3' }),
+      ]);
+
+      const page = await repo.findPage({}, { limit: 0 });
+      expect(page.items).toHaveLength(0);
+      expect(page.nextCursor).toBeUndefined();
+    });
+
+    it('should work with negative limit', async () => {
+      const repo = createSmartFirestoreRepo({
+        collection: testCollection(),
+        firestore: firestore.firestore,
+      });
+
+      await repo.createMany([
+        createTestEntity({ name: 'User 1' }),
+        createTestEntity({ name: 'User 2' }),
+        createTestEntity({ name: 'User 3' }),
+      ]);
+
+      const page = await repo.findPage({}, { limit: -1 });
+      expect(page.items).toHaveLength(0);
       expect(page.nextCursor).toBeUndefined();
     });
 
@@ -1637,7 +1694,6 @@ describe('createSmartFirestoreRepo', function () {
         describe: 'active users',
       };
 
-      // First page
       const page1 = await repo.findPageBySpec(activeUsersSpec, {
         limit: 2,
         orderBy: { name: 'asc' },
@@ -1647,7 +1703,6 @@ describe('createSmartFirestoreRepo', function () {
       expect(page1.items.every((u) => u.isActive)).toBe(true);
       expect(page1.nextCursor).toBeDefined();
 
-      // Second page
       const page2 = await repo.findPageBySpec(activeUsersSpec, {
         limit: 2,
         orderBy: { name: 'asc' },
@@ -1655,6 +1710,312 @@ describe('createSmartFirestoreRepo', function () {
       });
       expect(page2.items).toHaveLength(2);
       expect(page2.items.every((u) => u.isActive)).toBe(true);
+    });
+
+    describe('cursor pagination with custom orderBy', () => {
+      it('should paginate correctly with single field ascending order', async () => {
+        const repo = createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { generateId: ascendingIds(), mirrorId: true },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'Charlie', age: 35 }), // id-000
+          createTestEntity({ name: 'Alice', age: 25 }), // id-001
+          createTestEntity({ name: 'David', age: 40 }), // id-002
+          createTestEntity({ name: 'Bob', age: 30 }), // id-003
+          createTestEntity({ name: 'Eve', age: 45 }), // id-004
+          createTestEntity({ name: 'Bob', age: 45 }), // id-005
+        ]);
+
+        const result = await pages(
+          repo,
+          {},
+          { limit: 4, orderBy: { name: 'asc' }, projection: { id: true } }
+        );
+
+        expect(result).toEqual([
+          [
+            { id: 'id-001' },
+            { id: 'id-003' },
+            { id: 'id-005' },
+            { id: 'id-000' },
+          ],
+          [{ id: 'id-002' }, { id: 'id-004' }],
+        ]);
+      });
+
+      it('should paginate correctly with single field descending order', async () => {
+        const repo = createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { generateId: ascendingIds(), mirrorId: true },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'Charlie', age: 35 }),
+          createTestEntity({ name: 'Alice', age: 25 }),
+          createTestEntity({ name: 'David', age: 40 }),
+          createTestEntity({ name: 'Bob', age: 30 }),
+          createTestEntity({ name: 'Eve', age: 45 }),
+        ]);
+
+        const result = await pages(
+          repo,
+          {},
+          { limit: 2, orderBy: { name: 'desc' }, projection: { name: true } }
+        );
+
+        expect(result).toEqual([
+          [{ name: 'Eve' }, { name: 'David' }],
+          [{ name: 'Charlie' }, { name: 'Bob' }],
+          [{ name: 'Alice' }],
+        ]);
+      });
+
+      it('should paginate correctly with multi-field ordering (mixed directions)', async () => {
+        const repo = createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { generateId: ascendingIds(), mirrorId: true },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'Alice', age: 30, isActive: true }),
+          createTestEntity({ name: 'Bob', age: 25, isActive: true }),
+          createTestEntity({ name: 'Charlie', age: 30, isActive: false }),
+          createTestEntity({ name: 'David', age: 25, isActive: true }),
+          createTestEntity({ name: 'Eve', age: 35, isActive: false }),
+        ]);
+
+        const result = await pages(
+          repo,
+          {},
+          {
+            limit: 2,
+            orderBy: { age: 'desc', name: 'asc' },
+            projection: { name: true, age: true },
+          }
+        );
+
+        expect(result).toEqual([
+          [
+            { name: 'Eve', age: 35 },
+            { name: 'Alice', age: 30 },
+          ],
+          [
+            { name: 'Charlie', age: 30 },
+            { name: 'Bob', age: 25 },
+          ],
+          [{ name: 'David', age: 25 }],
+        ]);
+      });
+
+      it('handles null correctly (asc)', async () => {
+        const repo = createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { generateId: ascendingIds(), mirrorId: true },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'Alice', age: 25 }),
+          createTestEntity({ name: 'Bob', age: null as any }),
+          createTestEntity({ name: 'Charlie', age: 30 }),
+          createTestEntity({ name: 'David', age: null as any }),
+          createTestEntity({ name: 'Eve', age: 35 }),
+        ]);
+
+        const result = await pages(
+          repo,
+          {},
+          { limit: 4, orderBy: { age: 'asc' }, projection: { name: true } }
+        );
+
+        expect(result).toEqual([
+          [
+            { name: 'Bob' },
+            { name: 'David' },
+            { name: 'Alice' },
+            { name: 'Charlie' },
+          ],
+          [{ name: 'Eve' }],
+        ]);
+      });
+
+      it('handles null correctly (desc)', async () => {
+        const repo = createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { generateId: ascendingIds(), mirrorId: true },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'Alice', age: 25 }),
+          createTestEntity({ name: 'Bob', age: null as any }),
+          createTestEntity({ name: 'Charlie', age: 30 }),
+          createTestEntity({ name: 'David', age: null as any }),
+          createTestEntity({ name: 'Eve', age: 35 }),
+        ]);
+
+        const result = await pages(
+          repo,
+          {},
+          { limit: 4, orderBy: { age: 'desc' }, projection: { name: true } }
+        );
+
+        expect(result).toEqual([
+          [
+            { name: 'Eve' },
+            { name: 'Charlie' },
+            { name: 'Alice' },
+            { name: 'Bob' },
+          ],
+          [{ name: 'David' }],
+        ]);
+      });
+
+      it('skips docs with an undefined orderBy field', async () => {
+        const repo = createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { generateId: ascendingIds(), mirrorId: true },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'Alice', age: 25 }),
+          createTestEntity({ name: 'Bob', age: undefined as any }),
+          createTestEntity({ name: 'Charlie', age: 30 }),
+          createTestEntity({ name: 'David', age: undefined as any }),
+          createTestEntity({ name: 'Eve', age: 35 }),
+        ]);
+
+        const result = await pages(
+          repo,
+          {},
+          { limit: 4, orderBy: { age: 'asc' }, projection: { name: true } }
+        );
+
+        expect(result).toEqual([
+          [{ name: 'Alice' }, { name: 'Charlie' }, { name: 'Eve' }],
+        ]);
+      });
+
+      it('should work correctly with filters and custom ordering', async () => {
+        const repo = createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { generateId: ascendingIds(), mirrorId: true },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'Alice', age: 25, isActive: true }),
+          createTestEntity({ name: 'Bob', age: 30, isActive: false }),
+          createTestEntity({ name: 'Charlie', age: 35, isActive: true }),
+          createTestEntity({ name: 'David', age: 40, isActive: false }),
+          createTestEntity({ name: 'Eve', age: 45, isActive: true }),
+          createTestEntity({ name: 'Frank', age: 50, isActive: false }),
+        ]);
+
+        const result = await pages(
+          repo,
+          { isActive: true },
+          { limit: 20, orderBy: { age: 'desc' }, projection: { name: true } }
+        );
+        expect(result).toEqual([
+          [{ name: 'Eve' }, { name: 'Charlie' }, { name: 'Alice' }],
+        ]);
+      });
+
+      it('should handle documents with same sort field values using ID as tiebreaker', async () => {
+        const repo = createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { generateId: ascendingIds(), mirrorId: true },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'User1', age: 30 }),
+          createTestEntity({ name: 'User2', age: 30 }),
+          createTestEntity({ name: 'User3', age: 30 }),
+          createTestEntity({ name: 'User4', age: 30 }),
+          createTestEntity({ name: 'User5', age: 30 }),
+        ]);
+
+        const result = await pages(
+          repo,
+          {},
+          { limit: 2, orderBy: { age: 'asc' }, projection: { name: true } }
+        );
+
+        expect(result).toEqual([
+          [{ name: 'User1' }, { name: 'User2' }],
+          [{ name: 'User3' }, { name: 'User4' }],
+          [{ name: 'User5' }],
+        ]);
+      });
+
+      it('should work with nested field paths in orderBy', async () => {
+        const repo = createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { generateId: ascendingIds(), mirrorId: true },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'A', metadata: { tags: [], notes: 'D' } }),
+          createTestEntity({ name: 'B', metadata: { tags: [], notes: 'B' } }),
+          createTestEntity({ name: 'C', metadata: { tags: [], notes: 'C' } }),
+          createTestEntity({ name: 'D', metadata: { tags: [], notes: 'A' } }),
+        ]);
+
+        const result = await pages(
+          repo,
+          {},
+          {
+            limit: 2,
+            orderBy: { 'metadata.notes': 'asc' },
+            projection: { name: true },
+          }
+        );
+
+        expect(result).toEqual([
+          [{ name: 'D' }, { name: 'B' }],
+          [{ name: 'C' }, { name: 'A' }],
+        ]);
+      });
+
+      it('should correctly handle id in orderBy and ignore fields after it', async () => {
+        const repo = createSmartFirestoreRepo({
+          collection: testCollection(),
+          firestore: firestore.firestore,
+          options: { generateId: ascendingIds(), mirrorId: true },
+        });
+
+        await repo.createMany([
+          createTestEntity({ name: 'User1', age: 30 }),
+          createTestEntity({ name: 'User2', age: 30 }),
+          createTestEntity({ name: 'User3', age: 33 }),
+          createTestEntity({ name: 'User4', age: 30 }),
+        ]);
+
+        // orderBy includes id explicitly, followed by name (which should be ignored)
+        const result = await pages(
+          repo,
+          {},
+          {
+            limit: 2,
+            orderBy: { age: 'asc', id: 'asc', name: 'desc' },
+            projection: { name: true },
+          }
+        );
+
+        expect(result).toEqual([
+          [{ name: 'User1' }, { name: 'User2' }],
+          [{ name: 'User4' }, { name: 'User3' }],
+        ]);
+      });
     });
   });
 

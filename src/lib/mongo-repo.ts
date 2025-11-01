@@ -12,13 +12,13 @@ import {
 } from './repo-config';
 import {
   CreateManyPartialFailure,
+  type FindPageOptions,
   isAscending,
   OrderBy,
   SmartRepo,
   SortDirection,
   Specification,
   UpdateOperation,
-  type FindPageOptions,
 } from './smart-repo';
 import { Prettify } from './types';
 
@@ -629,10 +629,17 @@ export function createSmartMongoRepo<
       const sortOption: Record<string, 1 | -1> = {};
       if (options?.orderBy) {
         for (const [field, dir] of Object.entries(options.orderBy)) {
-          sortOption[field] = isAscending(dir as SortDirection) ? 1 : -1;
+          const mongoField = field === idKey ? '_id' : field;
+          const direction = isAscending(dir as SortDirection) ? 1 : -1;
+          sortOption[mongoField] = direction;
+          if (mongoField === '_id') {
+            // ignoring everything after _id because it's irrelevant
+            break;
+          }
         }
-      } else {
-        // Default sort by _id for deterministic ordering
+      }
+      // Always ensure _id is in the sort (as tiebreaker) for deterministic ordering
+      if (!sortOption._id) {
         sortOption._id = 1;
       }
 
@@ -705,7 +712,6 @@ export function createSmartMongoRepo<
           }
         }
       }
-
       // Always ensure _id is in the sort (as tiebreaker) for deterministic ordering
       if (!sortOption._id) {
         sortOption._id = 1;

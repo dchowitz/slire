@@ -22,13 +22,13 @@ import {
 } from './repo-config';
 import {
   CreateManyPartialFailure,
+  type FindPageOptions,
   isAscending,
   OrderBy,
   SmartRepo,
   SortDirection,
   Specification,
   UpdateOperation,
-  type FindPageOptions,
 } from './smart-repo';
 import { Prettify } from './types';
 
@@ -690,15 +690,21 @@ export function createSmartFirestoreRepo<
       query = applyConstraints(query);
 
       // Apply ordering
+      let orderByContainsId = false;
       if (options?.orderBy) {
         for (const [field, dir] of Object.entries(options.orderBy)) {
           query = query.orderBy(
             field,
             isAscending(dir as SortDirection) ? 'asc' : 'desc'
           );
+          if (field === '__name__' || field === idKey) {
+            orderByContainsId = true;
+            break; // we can skip the rest, ID is unique and hence a tiebreaker
+          }
         }
-      } else {
-        // Default sort by document ID for deterministic ordering
+      }
+      // Ensure deterministic pagination with a stable tiebreaker
+      if (!orderByContainsId) {
         query = query.orderBy('__name__', 'asc');
       }
 
@@ -761,6 +767,10 @@ export function createSmartFirestoreRepo<
         return { items: [], nextCursor: undefined };
       }
 
+      if (options.limit < 1) {
+        return { items: [], nextCursor: undefined };
+      }
+
       let query: any = collection;
 
       // Apply filter constraints
@@ -774,15 +784,21 @@ export function createSmartFirestoreRepo<
       query = applyConstraints(query);
 
       // Apply ordering
+      let orderByContainsId = false;
       if (options.orderBy) {
         for (const [field, dir] of Object.entries(options.orderBy)) {
           query = query.orderBy(
             field,
             isAscending(dir as SortDirection) ? 'asc' : 'desc'
           );
+          if (field === '__name__' || field === idKey) {
+            orderByContainsId = true;
+            break; // we can skip the rest, ID is unique and hence a tiebreaker
+          }
         }
-      } else {
-        // Default sort by __name__ for deterministic ordering
+      }
+      // Ensure deterministic pagination with a stable tiebreaker
+      if (!orderByContainsId) {
         query = query.orderBy('__name__', 'asc');
       }
 
@@ -792,11 +808,14 @@ export function createSmartFirestoreRepo<
         const docSnapshot = await (transaction
           ? transaction.get(docRef)
           : docRef.get());
-        if (docSnapshot.exists) {
-          query = query.startAfter(docSnapshot);
-        } else {
-          throw new Error(`Invalid cursor: ${options.cursor}`);
+        if (
+          !docSnapshot.exists ||
+          config.scopeBreach(docSnapshot.data()!) ||
+          config.softDeleted(docSnapshot.data()!)
+        ) {
+          throw new Error('Invalid cursor: document not found');
         }
+        query = query.startAfter(docSnapshot);
       }
 
       // Fetch limit + 1 to determine if there are more results
