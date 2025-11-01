@@ -97,7 +97,7 @@ await repo.update(id, { set: { totalClaim: 42 }, unset: 'attachments' });
 
 await repo.delete(id);
 
-await repo.getById(id); // null
+await repo.getById(id); // undefined
 ```
 
 The full list is documented in the [API Reference](#api-reference-core-crud-operations-smartrepo-interface) section.
@@ -381,7 +381,7 @@ Bulk version of `update` that applies the same update operation to multiple enti
 
 For large inputs, the operation may run in chunks to respect MongoDB limits and is not atomic across chunks. If you need all-or-nothing behavior across many IDs, wrap the call in a transaction using `runTransaction`.
 
-This method is not all-or-nothing. Some entities may be inserted, some updated, and others may fail due to unique constraints or scope rules. For atomicity across entities, wrap the call in a transaction using `runTransaction`.
+This method is not all-or-nothing. Some entities may be updated, and others may fail due to unique constraints or scope rules. For atomicity across entities, wrap the call in a transaction using `runTransaction`.
 
 Note that `upsert` and `upsertMany` are intentionally not provided to keep the API simple.
 
