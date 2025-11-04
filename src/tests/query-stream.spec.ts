@@ -226,7 +226,6 @@ describe('QueryStream', () => {
           yield 1;
           yield 2;
           throw new Error('Test error');
-          // eslint-disable-next-line no-unreachable
           yield 3; // This should not be reached
         })()
       );
@@ -273,7 +272,6 @@ describe('QueryStream', () => {
     it('should prevent reusing a stream after async iteration', async () => {
       const stream = createStream([1, 2, 3]);
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       for await (const _ of stream) {
         // consume the stream
       }
