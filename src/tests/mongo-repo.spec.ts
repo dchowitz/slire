@@ -1,6 +1,6 @@
-import omit from 'lodash/omit'
-import range from 'lodash/range'
-import sortBy from 'lodash/sortBy'
+import omit from 'lodash/omit';
+import range from 'lodash/range';
+import sortBy from 'lodash/sortBy';
 import { Collection, ObjectId } from 'mongodb';
 import { createSmartMongoRepo } from '../lib/mongo-repo';
 import {
@@ -184,10 +184,10 @@ describe('createSmartMongoRepo', function () {
       const now = new Date();
       const fiveSecondsAgo = new Date(now.getTime() - 5000);
       expect(rawDoc?._createdAt.getTime()).toBeGreaterThan(
-        fiveSecondsAgo.getTime()
+        fiveSecondsAgo.getTime(),
       );
       expect(rawDoc?._updatedAt.getTime()).toBeGreaterThan(
-        fiveSecondsAgo.getTime()
+        fiveSecondsAgo.getTime(),
       );
     });
 
@@ -248,10 +248,10 @@ describe('createSmartMongoRepo', function () {
       const now = new Date();
       const fiveSecondsAgo = new Date(now.getTime() - 5000);
       expect(rawDoc?.createdAt.getTime()).toBeGreaterThan(
-        fiveSecondsAgo.getTime()
+        fiveSecondsAgo.getTime(),
       );
       expect(rawDoc?.updatedAt.getTime()).toBeGreaterThan(
-        fiveSecondsAgo.getTime()
+        fiveSecondsAgo.getTime(),
       );
 
       // Verify the actual data was preserved
@@ -385,7 +385,7 @@ describe('createSmartMongoRepo', function () {
           name: `User ${i}`,
           email: `user${i}@example.com`,
           age: 20 + i,
-        })
+        }),
       );
 
       const createdIds = await repo.createMany(entities);
@@ -457,7 +457,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       const entities = range(0, 1005).map((i) =>
-        createTestEntity({ name: `U${i}`, email: `u${i}@e.com` })
+        createTestEntity({ name: `U${i}`, email: `u${i}@e.com` }),
       );
 
       try {
@@ -536,7 +536,7 @@ describe('createSmartMongoRepo', function () {
         mongoClient: mongo.client,
       });
       const id = await base.create(
-        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' })
+        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' }),
       );
 
       const scoped = createSmartMongoRepo({
@@ -557,7 +557,7 @@ describe('createSmartMongoRepo', function () {
         mongoClient: mongo.client,
       });
       const entities = range(0, 5).map((i) =>
-        createTestEntity({ name: `Entity ${i}` })
+        createTestEntity({ name: `Entity ${i}` }),
       );
       const createdIds: string[] = [];
 
@@ -578,7 +578,7 @@ describe('createSmartMongoRepo', function () {
       expect(found).toHaveLength(3);
       expect(notFound).toHaveLength(2);
       expect(notFound).toEqual(
-        expect.arrayContaining([nonExistent1, nonExistent2])
+        expect.arrayContaining([nonExistent1, nonExistent2]),
       );
 
       // check that all expected entities are found, regardless of order
@@ -594,7 +594,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       const nonExistendIds = range(0, 3).map(() =>
-        new ObjectId().toHexString()
+        new ObjectId().toHexString(),
       );
       const [found, notFound] = await repo.getByIds(nonExistendIds);
 
@@ -607,7 +607,7 @@ describe('createSmartMongoRepo', function () {
         mongoClient: mongo.client,
       });
       const entities = range(0, 3).map((i) =>
-        createTestEntity({ name: `Entity ${i}` })
+        createTestEntity({ name: `Entity ${i}` }),
       );
       const createdIds = await repo.createMany(entities);
 
@@ -876,7 +876,7 @@ describe('createSmartMongoRepo', function () {
       expect(rawDoc?.metadata).not.toHaveProperty('notes');
       expect(rawDoc?.metadata?.nested).not.toHaveProperty('field2');
       expect(rawDoc?.metadata?.nested?.deep).not.toHaveProperty(
-        'level3undefined'
+        'level3undefined',
       );
 
       // Verify null fields are preserved as null
@@ -897,7 +897,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ tenantId: 'acme', name: 'Original Name' })
+        createTestEntity({ tenantId: 'acme', name: 'Original Name' }),
       );
 
       await repo.update(id, { set: { name: 'Updated Name' } });
@@ -915,13 +915,13 @@ describe('createSmartMongoRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ tenantId: 'acme', name: 'Original Name' })
+        createTestEntity({ tenantId: 'acme', name: 'Original Name' }),
       );
 
       await expect(
         repo.update(id, {
           set: { tenantId: 'foo', name: 'Updated Name' } as any,
-        })
+        }),
       ).rejects.toThrow('Cannot update readonly properties: tenantId');
 
       expect(await repo.getById(id, { tenantId: true, name: true })).toEqual({
@@ -944,14 +944,14 @@ describe('createSmartMongoRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ tenantId: 'acme', name: 'Original Name' })
+        createTestEntity({ tenantId: 'acme', name: 'Original Name' }),
       );
 
       await expect(
         repo.update(id, {
           set: { _v: 47, name: 'Updated Name' } as any,
           unset: ['_createdAt'] as any,
-        })
+        }),
       ).rejects.toThrow('Cannot update readonly properties: _v');
 
       expect(await repo.getById(id, { tenantId: true, name: true })).toEqual({
@@ -973,14 +973,14 @@ describe('createSmartMongoRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ tenantId: 'acme', name: 'Original Name' })
+        createTestEntity({ tenantId: 'acme', name: 'Original Name' }),
       );
 
       await expect(
         repo.update(id, {
           set: { name: 'Updated Name' },
           unset: ['_createdAt'] as any,
-        })
+        }),
       ).rejects.toThrow('Cannot unset readonly properties: _createdAt');
 
       expect(await repo.getById(id, { tenantId: true, name: true })).toEqual({
@@ -1047,7 +1047,7 @@ describe('createSmartMongoRepo', function () {
         mongoClient: mongo.client,
       });
       const entities = range(0, 5).map((i) =>
-        createTestEntity({ name: `Entity ${i}` })
+        createTestEntity({ name: `Entity ${i}` }),
       );
 
       const createdIds = await repo.createMany(entities);
@@ -1065,7 +1065,7 @@ describe('createSmartMongoRepo', function () {
         mongoClient: mongo.client,
       });
       const entities = range(0, 150).map((i) =>
-        createTestEntity({ name: `Entity ${i}` })
+        createTestEntity({ name: `Entity ${i}` }),
       );
 
       const createdIds = await repo.createMany(entities);
@@ -1177,7 +1177,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       expect(() =>
-        repo.find({ tenantId: 'other' }, { onScopeBreach: 'error' })
+        repo.find({ tenantId: 'other' }, { onScopeBreach: 'error' }),
       ).toThrow('Scope breach detected in find filter');
     });
 
@@ -1291,7 +1291,7 @@ describe('createSmartMongoRepo', function () {
       const results = await repo
         .find(
           { name: 'Non-existent' },
-          { projection: { name: true, email: true } }
+          { projection: { name: true, email: true } },
         )
         .toArray();
       expect(results).toHaveLength(0);
@@ -1324,7 +1324,7 @@ describe('createSmartMongoRepo', function () {
         mongoClient: mongo.client,
       });
       const id = await base.create(
-        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' })
+        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' }),
       );
 
       const scoped = createSmartMongoRepo({
@@ -1341,7 +1341,7 @@ describe('createSmartMongoRepo', function () {
               id: true,
               name: true,
             },
-          }
+          },
         )
         .toArray();
 
@@ -1368,7 +1368,7 @@ describe('createSmartMongoRepo', function () {
       const result = await pages(
         repo,
         {},
-        { limit: 2, projection: { name: true } }
+        { limit: 2, projection: { name: true } },
       );
 
       expect(result).toEqual([
@@ -1395,7 +1395,7 @@ describe('createSmartMongoRepo', function () {
       const result = await pages(
         repo,
         { isActive: true },
-        { limit: 1, projection: { name: true } } // implicit sort by id
+        { limit: 1, projection: { name: true } }, // implicit sort by id
       );
 
       expect(result).toEqual([[{ name: 'Alice' }], [{ name: 'David' }]]);
@@ -1425,7 +1425,7 @@ describe('createSmartMongoRepo', function () {
         {
           limit: 100,
           orderBy: { name: 'asc', age: 'desc', id: 'desc', email: 'asc' }, // email will be ignored
-        }
+        },
       );
 
       expect(page.items.map((u) => `${u.name}-${u.age}-${u.id}`)).toEqual([
@@ -1462,7 +1462,7 @@ describe('createSmartMongoRepo', function () {
 
       const page = await scoped.findPage(
         { tenantId: 'tenant-B' },
-        { limit: 10 }
+        { limit: 10 },
       );
       expect(page.items).toHaveLength(0);
       expect(page.nextCursor).toBeUndefined();
@@ -1478,8 +1478,8 @@ describe('createSmartMongoRepo', function () {
       await expect(
         scoped.findPage(
           { tenantId: 'tenant-B' },
-          { limit: 10, onScopeBreach: 'error' }
-        )
+          { limit: 10, onScopeBreach: 'error' },
+        ),
       ).rejects.toThrow('Scope breach detected in findPage filter');
     });
 
@@ -1490,7 +1490,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       await expect(
-        repo.findPage({}, { limit: 10, cursor: new ObjectId().toHexString() })
+        repo.findPage({}, { limit: 10, cursor: new ObjectId().toHexString() }),
       ).rejects.toThrow('Invalid cursor: document not found');
     });
 
@@ -1501,7 +1501,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       await expect(
-        repo.findPage({}, { limit: 10, cursor: 'not-an-object-id' })
+        repo.findPage({}, { limit: 10, cursor: 'not-an-object-id' }),
       ).rejects.toThrow(/Invalid cursor: input must be/);
     });
 
@@ -1520,7 +1520,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       await expect(
-        scoped.findPage({}, { limit: 10, cursor: id })
+        scoped.findPage({}, { limit: 10, cursor: id }),
       ).rejects.toThrow('Invalid cursor: document not found');
     });
 
@@ -1535,7 +1535,7 @@ describe('createSmartMongoRepo', function () {
       await repo.delete(id);
 
       await expect(
-        repo.findPage({}, { limit: 10, cursor: id })
+        repo.findPage({}, { limit: 10, cursor: id }),
       ).rejects.toThrow('Invalid cursor: document not found');
     });
 
@@ -1645,7 +1645,7 @@ describe('createSmartMongoRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 4, orderBy: { name: 'asc' }, projection: { id: true } }
+          { limit: 4, orderBy: { name: 'asc' }, projection: { id: true } },
         );
 
         expect(result).toEqual([
@@ -1677,7 +1677,7 @@ describe('createSmartMongoRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 2, orderBy: { name: 'desc' }, projection: { name: true } }
+          { limit: 2, orderBy: { name: 'desc' }, projection: { name: true } },
         );
 
         expect(result).toEqual([
@@ -1709,7 +1709,7 @@ describe('createSmartMongoRepo', function () {
             limit: 2,
             orderBy: { age: 'desc', name: 'asc' },
             projection: { name: true, age: true },
-          }
+          },
         );
 
         expect(result).toEqual([
@@ -1743,7 +1743,7 @@ describe('createSmartMongoRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 4, orderBy: { age: 'asc' }, projection: { name: true } }
+          { limit: 4, orderBy: { age: 'asc' }, projection: { name: true } },
         );
 
         expect(result).toEqual([
@@ -1775,7 +1775,7 @@ describe('createSmartMongoRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 4, orderBy: { age: 'desc' }, projection: { name: true } }
+          { limit: 4, orderBy: { age: 'desc' }, projection: { name: true } },
         );
 
         expect(result).toEqual([
@@ -1808,7 +1808,7 @@ describe('createSmartMongoRepo', function () {
         const result = await pages(
           repo,
           { isActive: true },
-          { limit: 20, orderBy: { age: 'desc' }, projection: { name: true } }
+          { limit: 20, orderBy: { age: 'desc' }, projection: { name: true } },
         );
         expect(result).toEqual([
           [{ name: 'Eve' }, { name: 'Charlie' }, { name: 'Alice' }],
@@ -1833,7 +1833,7 @@ describe('createSmartMongoRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 2, orderBy: { age: 'asc' }, projection: { name: true } }
+          { limit: 2, orderBy: { age: 'asc' }, projection: { name: true } },
         );
 
         expect(result).toEqual([
@@ -1864,7 +1864,7 @@ describe('createSmartMongoRepo', function () {
             limit: 2,
             orderBy: { 'metadata.notes': 'asc' },
             projection: { name: true },
-          }
+          },
         );
 
         expect(result).toEqual([
@@ -1895,7 +1895,7 @@ describe('createSmartMongoRepo', function () {
             limit: 2,
             orderBy: { age: 'asc', id: 'asc', name: 'desc' },
             projection: { name: true },
-          }
+          },
         );
 
         expect(result).toEqual([
@@ -1960,7 +1960,7 @@ describe('createSmartMongoRepo', function () {
       expect(await repo.count({ tenantId: 'other' })).toBe(0);
 
       await expect(
-        repo.count({ tenantId: 'other' }, { onScopeBreach: 'error' })
+        repo.count({ tenantId: 'other' }, { onScopeBreach: 'error' }),
       ).rejects.toThrow('Scope breach detected in count filter');
     });
 
@@ -1986,7 +1986,7 @@ describe('createSmartMongoRepo', function () {
         mongoClient: mongo.client,
       });
       const id = await base.create(
-        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' })
+        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' }),
       );
 
       const scoped = createSmartMongoRepo({
@@ -2124,7 +2124,7 @@ describe('createSmartMongoRepo', function () {
 
       // Internal factory - would not be exported in real code
       function createApprovedSpec<T>(
-        spec: Specification<T>
+        spec: Specification<T>,
       ): ApprovedSpecification<T> {
         return { ...spec, [APPROVED_SPEC]: true as const };
       }
@@ -2146,7 +2146,7 @@ describe('createSmartMongoRepo', function () {
       // Function that only accepts approved specs
       async function findByApprovedSpec<T extends { id: string }>(
         repository: SmartRepo<T>,
-        spec: ApprovedSpecification<T>
+        spec: ApprovedSpecification<T>,
       ): Promise<T[]> {
         return repository.findBySpec(spec).toArray();
       }
@@ -2154,13 +2154,13 @@ describe('createSmartMongoRepo', function () {
       // Test approved specifications work
       const activeUsers = await findByApprovedSpec(
         repo,
-        approvedTestSpecs.active()
+        approvedTestSpecs.active(),
       );
       expect(activeUsers).toHaveLength(2);
 
       const youngUsers = await findByApprovedSpec(
         repo,
-        approvedTestSpecs.byAge(25)
+        approvedTestSpecs.byAge(25),
       );
       expect(youngUsers).toHaveLength(1);
       expect(youngUsers[0].name).toBe('Alice');
@@ -2213,7 +2213,7 @@ describe('createSmartMongoRepo', function () {
 
       const id = await scopedRepo.create(omit(createTestEntity(), 'tenantId'));
       const moreIds = await scopedRepo.createMany(
-        range(0, 2).map((_) => omit(createTestEntity(), 'tenantId'))
+        range(0, 2).map((_) => omit(createTestEntity(), 'tenantId')),
       );
 
       const result = await scopedRepo.getByIds([id, ...moreIds], {
@@ -2252,7 +2252,7 @@ describe('createSmartMongoRepo', function () {
         tenantId: 'not-acme', // doesn't match scope
       });
       await expect(scopedRepo.create(invalidEntity)).rejects.toThrow(
-        "Cannot create entity: scope property 'tenantId' must be 'acme', got 'not-acme'"
+        "Cannot create entity: scope property 'tenantId' must be 'acme', got 'not-acme'",
       );
     });
 
@@ -2275,17 +2275,17 @@ describe('createSmartMongoRepo', function () {
 
       // this should fail at runtime (scope property in set)
       await expect(
-        scopedRepo.update(id, { set: { tenantId: 'not-acme' } } as any)
+        scopedRepo.update(id, { set: { tenantId: 'not-acme' } } as any),
       ).rejects.toThrow('Cannot update readonly properties: tenantId');
 
       // this should fail at runtime (scope property in set even if it matches scope)
       await expect(
-        scopedRepo.update(id, { set: { tenantId: 'acme' } } as any)
+        scopedRepo.update(id, { set: { tenantId: 'acme' } } as any),
       ).rejects.toThrow('Cannot update readonly properties: tenantId');
 
       // this should fail at runtime (scope property in unset)
       await expect(
-        scopedRepo.update(id, { unset: ['tenantId'] } as any)
+        scopedRepo.update(id, { unset: ['tenantId'] } as any),
       ).rejects.toThrow('Cannot unset readonly properties: tenantId');
     });
 
@@ -2313,7 +2313,7 @@ describe('createSmartMongoRepo', function () {
 
       // never returns entities out of scope (even if filter says so)
       expect(
-        await scopedRepo.find({ tenantId: 'not-acme' }).toArray()
+        await scopedRepo.find({ tenantId: 'not-acme' }).toArray(),
       ).toHaveLength(0);
 
       // should be able to project scope properties
@@ -2462,7 +2462,7 @@ describe('createSmartMongoRepo', function () {
         collection: mongo.client
           .db()
           .collection(
-            COLLECTION_NAME
+            COLLECTION_NAME,
           ) as unknown as Collection<EntityWithAlias>,
         mongoClient: mongo.client,
         options: { idKey: 'entityId', generateId: 'server' },
@@ -2492,7 +2492,7 @@ describe('createSmartMongoRepo', function () {
       });
       const id = await repo.create(createTestEntity({ name: 'E' }));
       await expect(
-        repo.update(id, { set: { id: 'hacked' } } as any)
+        repo.update(id, { set: { id: 'hacked' } } as any),
       ).rejects.toThrow('Cannot update readonly properties');
     });
   });
@@ -2545,7 +2545,7 @@ describe('createSmartMongoRepo', function () {
 
       const foundAll = await repo.find({}).toArray();
       expect(foundAll.map((e) => e.name)).toEqual(
-        expect.arrayContaining(['A', 'C'])
+        expect.arrayContaining(['A', 'C']),
       );
 
       const gotB = await repo.getById(b);
@@ -2553,7 +2553,7 @@ describe('createSmartMongoRepo', function () {
 
       const [found, notFound] = await repo.getByIds([a, b, c]);
       expect(found.map((e) => e.name)).toEqual(
-        expect.arrayContaining(['A', 'C'])
+        expect.arrayContaining(['A', 'C']),
       );
       expect(notFound).toEqual([b]);
 
@@ -2607,7 +2607,7 @@ describe('createSmartMongoRepo', function () {
       expect(raw2?._updatedAt).toBeInstanceOf(Date);
       // updatedAt should be newer than before
       expect(raw2!._updatedAt.getTime()).toBeGreaterThan(
-        raw1!._updatedAt.getTime()
+        raw1!._updatedAt.getTime(),
       );
 
       // ensure delete happens at a later timestamp
@@ -2618,7 +2618,7 @@ describe('createSmartMongoRepo', function () {
       // on delete, updatedAt and deletedAt should be equal and newer than previous updatedAt
       expect(raw3!._updatedAt.getTime()).toBe(raw3!._deletedAt.getTime());
       expect(raw3!._updatedAt.getTime()).toBeGreaterThan(
-        raw2!._updatedAt.getTime()
+        raw2!._updatedAt.getTime(),
       );
     });
 
@@ -2634,14 +2634,14 @@ describe('createSmartMongoRepo', function () {
       expect(raw1?._createdAt).toBeInstanceOf(Date);
       expect(raw1?._updatedAt).toBeInstanceOf(Date);
       expect(
-        Math.abs(raw1!._createdAt.getTime() - raw1!._updatedAt.getTime())
+        Math.abs(raw1!._createdAt.getTime() - raw1!._updatedAt.getTime()),
       ).toBeLessThan(5); // sometimes differ
 
       await new Promise((r) => setTimeout(r, 2));
       await repo.update(id, { set: { name: 'TS2' } });
       const raw2 = await rawTestCollection().findOne({ _id: new ObjectId(id) });
       expect(raw2!._updatedAt.getTime()).toBeGreaterThan(
-        raw1!._updatedAt.getTime()
+        raw1!._updatedAt.getTime(),
       );
 
       await new Promise((r) => setTimeout(r, 2));
@@ -2649,7 +2649,7 @@ describe('createSmartMongoRepo', function () {
       const raw3 = await rawTestCollection().findOne({ _id: new ObjectId(id) });
       expect(raw3!._updatedAt.getTime()).toBe(raw3!._deletedAt.getTime());
       expect(raw3!._updatedAt.getTime()).toBeGreaterThan(
-        raw2!._updatedAt.getTime()
+        raw2!._updatedAt.getTime(),
       );
     });
 
@@ -2715,7 +2715,7 @@ describe('createSmartMongoRepo', function () {
       expect(retrieved!.createdAt).toBeInstanceOf(Date);
       expect(retrieved!.updatedAt).toBeInstanceOf(Date);
       expect(retrieved!.createdAt.getTime()).toBe(
-        retrieved!.updatedAt.getTime()
+        retrieved!.updatedAt.getTime(),
       );
     });
 
@@ -2778,7 +2778,7 @@ describe('createSmartMongoRepo', function () {
       const updated = await repo.getById(id);
       expect(updated!.name).toBe('Updated Name');
       expect(updated!.createdAt.getTime()).toBe(
-        new Date('2023-01-01T00:00:00Z').getTime()
+        new Date('2023-01-01T00:00:00Z').getTime(),
       );
       expect(updated!.updatedAt.getTime()).toBe(testTime.getTime());
     });
@@ -2800,11 +2800,11 @@ describe('createSmartMongoRepo', function () {
       const id = await repo.create(entity);
 
       await expect(
-        repo.update(id, { set: { createdAt: new Date() } } as any)
+        repo.update(id, { set: { createdAt: new Date() } } as any),
       ).rejects.toThrow('Cannot update readonly properties: createdAt');
 
       await expect(
-        repo.update(id, { set: { updatedAt: new Date() } } as any)
+        repo.update(id, { set: { updatedAt: new Date() } } as any),
       ).rejects.toThrow('Cannot update readonly properties: updatedAt');
     });
 
@@ -2945,7 +2945,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ name: 'Delete Version Test' })
+        createTestEntity({ name: 'Delete Version Test' }),
       );
 
       // check initial version
@@ -2996,7 +2996,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ name: 'No Version Test' })
+        createTestEntity({ name: 'No Version Test' }),
       );
 
       // should not have version field
@@ -3021,7 +3021,7 @@ describe('createSmartMongoRepo', function () {
       });
 
       const [id1, id2, id3] = await repo.createMany(
-        range(0, 3).map((_) => createTestEntity())
+        range(0, 3).map((_) => createTestEntity()),
       );
 
       const updates = [
@@ -3037,7 +3037,7 @@ describe('createSmartMongoRepo', function () {
             filter: { _id: new ObjectId(update.id) },
             update: repo.buildUpdateOperation(update),
           },
-        }))
+        })),
       );
 
       const updated1 = await rawTestCollection().findOne({
@@ -3071,7 +3071,7 @@ describe('createSmartMongoRepo', function () {
             tenantId: 'bar',
             _createdAt: new Date(),
           },
-        } as any)
+        } as any),
       ).toThrow('Cannot update readonly properties: _id, _createdAt, tenantId');
     });
 
@@ -3089,7 +3089,7 @@ describe('createSmartMongoRepo', function () {
       // Use buildUpdateOperation directly with merge trace
       const updateOp = repo.buildUpdateOperation(
         { set: { name: 'Updated Name' } },
-        { operation: 'direct-update', source: 'admin-panel' }
+        { operation: 'direct-update', source: 'admin-panel' },
       );
 
       await rawTestCollection().updateOne({ _id: new ObjectId(id) }, updateOp);
@@ -3128,41 +3128,41 @@ describe('createSmartMongoRepo', function () {
             name: '0',
             isActive: true,
             tenantId: 'acme',
-          })
+          }),
         ),
         acmeRepo.create(
           createTestEntity({
             name: '1',
             isActive: true,
             tenantId: 'acme',
-          })
+          }),
         ),
         acmeRepo.create(
           createTestEntity({
             name: '2',
             isActive: false,
             tenantId: 'acme',
-          })
+          }),
         ),
         fooRepo.create(
-          createTestEntity({ name: '3', isActive: true, tenantId: 'foo' })
+          createTestEntity({ name: '3', isActive: true, tenantId: 'foo' }),
         ),
         fooRepo.create(
-          createTestEntity({ name: '4', isActive: true, tenantId: 'foo' })
+          createTestEntity({ name: '4', isActive: true, tenantId: 'foo' }),
         ),
         fooRepo.create(
           createTestEntity({
             name: '5',
             isActive: false,
             tenantId: 'foo',
-          })
+          }),
         ),
         fooRepo.create(
           createTestEntity({
             name: '6',
             isActive: false,
             tenantId: 'foo',
-          })
+          }),
         ),
       ]);
 
@@ -3204,7 +3204,7 @@ describe('createSmartMongoRepo', function () {
         repo.applyConstraints({ _id: new ObjectId(id) }),
         {
           $set: { _notInModel: 'default' },
-        }
+        },
       );
 
       let updated = await rawTestCollection().findOne({
@@ -3215,7 +3215,9 @@ describe('createSmartMongoRepo', function () {
       // No override; soft-deleted doc is ignored
       await repo.collection.updateOne(
         repo.applyConstraints({ _id: new ObjectId(id) }),
-        { $set: { _notInModel: 'included' } }
+        {
+          $set: { _notInModel: 'included' },
+        },
       );
 
       updated = await rawTestCollection().findOne({ _id: new ObjectId(id) });
@@ -3292,7 +3294,7 @@ describe('createSmartMongoRepo', function () {
       const finalEntities = await repo.find({ age: 40 }).toArray();
       expect(finalEntities).toHaveLength(3);
       expect(finalEntities.map((e) => e.name)).toEqual(
-        expect.arrayContaining(['Run TX 1', 'Run TX 2', 'Run TX 3'])
+        expect.arrayContaining(['Run TX 1', 'Run TX 2', 'Run TX 3']),
       );
     });
 
@@ -3332,7 +3334,7 @@ describe('createSmartMongoRepo', function () {
       } catch (error) {
         expect(error).toBeInstanceOf(Error);
         expect((error as Error).message).toBe(
-          'Intentional transaction failure'
+          'Intentional transaction failure',
         );
       }
 
@@ -3382,10 +3384,10 @@ describe('createSmartMongoRepo', function () {
       const finalEntities = await repo.find({}).toArray();
       expect(finalEntities).toHaveLength(2);
       expect(finalEntities.map((e) => e.name)).toEqual(
-        expect.arrayContaining(['Existing 1', 'Existing 2'])
+        expect.arrayContaining(['Existing 1', 'Existing 2']),
       );
       expect(finalEntities.map((e) => e.age)).toEqual(
-        expect.arrayContaining([20, 25])
+        expect.arrayContaining([20, 25]),
       );
     });
 
@@ -3411,7 +3413,7 @@ describe('createSmartMongoRepo', function () {
           createTestEntity({
             name: `Derived from ${e.name}`,
             isActive: false,
-          })
+          }),
         );
         const batch2 = await txRepo.createMany(batch2Entities);
 
@@ -3470,7 +3472,7 @@ describe('createSmartMongoRepo', function () {
       const allEntities = await baseRepo.find({}).toArray();
       expect(allEntities).toHaveLength(2);
       expect(
-        allEntities.every((e) => e.tenantId === 'acme' && e.age === 88)
+        allEntities.every((e) => e.tenantId === 'acme' && e.age === 88),
       ).toBe(true);
     });
   });
@@ -3492,7 +3494,7 @@ describe('createSmartMongoRepo', function () {
         });
       }).toThrow(
         'Duplicate keys found in repository configuration: timestamp. ' +
-          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
+          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.',
       );
     });
 
@@ -3513,7 +3515,7 @@ describe('createSmartMongoRepo', function () {
         });
       }).toThrow(
         'Duplicate keys found in repository configuration: sharedKey. ' +
-          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
+          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.',
       );
     });
 
@@ -3534,7 +3536,7 @@ describe('createSmartMongoRepo', function () {
         });
       }).toThrow(
         'Duplicate keys found in repository configuration: _deleted. ' +
-          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
+          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.',
       );
     });
 
@@ -3578,9 +3580,9 @@ describe('createSmartMongoRepo', function () {
             created: new Date(),
             _updatedAt: new Date(),
           },
-        })
+        }),
       ).toThrow(
-        'Readonly fields found in scope: _v, _deleted, created, _updatedAt'
+        'Readonly fields found in scope: _v, _deleted, created, _updatedAt',
       );
     });
   });
@@ -3740,7 +3742,7 @@ describe('createSmartMongoRepo', function () {
           options: {
             traceStrategy: 'bounded',
           },
-        })
+        }),
       ).toThrow('traceLimit is required when traceStrategy is "bounded"');
     });
 
@@ -3786,7 +3788,7 @@ describe('createSmartMongoRepo', function () {
       await repo.update(
         id,
         { set: { name: 'Updated Name' } },
-        { mergeTrace: { operation: 'user-edit' } }
+        { mergeTrace: { operation: 'user-edit' } },
       );
 
       const rawDoc = await rawTestCollection().findOne({
@@ -3816,7 +3818,7 @@ describe('createSmartMongoRepo', function () {
       await repo.updateMany(
         ids,
         { set: { isActive: false } },
-        { mergeTrace: { operation: 'bulk-deactivate' } }
+        { mergeTrace: { operation: 'bulk-deactivate' } },
       );
 
       for (const id of ids) {
@@ -3894,7 +3896,7 @@ describe('createSmartMongoRepo', function () {
 
       // Should not allow updating trace field
       await expect(
-        repo.update(id, { set: { _trace: { malicious: 'data' } } } as any)
+        repo.update(id, { set: { _trace: { malicious: 'data' } } } as any),
       ).rejects.toThrow('Cannot update readonly properties');
     });
 

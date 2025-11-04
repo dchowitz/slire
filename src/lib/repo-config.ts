@@ -45,7 +45,7 @@ export type RepositoryConfig<T> = {
 export type ManagedFields<
   T,
   Config extends RepositoryConfig<T>,
-  Scope extends Partial<T>
+  Scope extends Partial<T>,
 > =
   | 'id'
   | Extract<keyof Scope, keyof T>
@@ -91,7 +91,7 @@ export type WriteOp = 'create' | 'update' | 'delete';
 export function repoConfig<T extends { id: string }>(
   config: RepositoryConfig<T>,
   traceContext?: any,
-  scope?: Partial<T>
+  scope?: Partial<T>,
 ) {
   // Identity
   const idKey = (config.idKey ?? ('id' as const)) as string;
@@ -135,7 +135,7 @@ export function repoConfig<T extends { id: string }>(
     configuredKeys.push(
       createdAtKey as string,
       updatedAtKey as string,
-      deletedAtKey as string
+      deletedAtKey as string,
     );
 
     // Add to hidden meta keys if using defaults
@@ -173,24 +173,22 @@ export function repoConfig<T extends { id: string }>(
 
   // Validate scope doesn't use readonly fields
   const readOnlyFieldsInScope = Object.keys(scopeObj).filter((f) =>
-    READONLY_KEYS.has(f)
+    READONLY_KEYS.has(f),
   );
   if (readOnlyFieldsInScope.length > 0) {
     throw new Error(
-      `Readonly fields found in scope: ${readOnlyFieldsInScope.join(', ')}`
+      `Readonly fields found in scope: ${readOnlyFieldsInScope.join(', ')}`,
     );
   }
 
   // Validation - ensure no duplicate keys
   const duplicates = configuredKeys.filter(
-    (item, index) => configuredKeys.indexOf(item) !== index
+    (item, index) => configuredKeys.indexOf(item) !== index,
   );
   if (duplicates.length > 0) {
     throw new Error(
-      `Duplicate keys found in repository configuration: ${duplicates.join(
-        ', '
-      )}. ` +
-        'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
+      `Duplicate keys found in repository configuration: ${duplicates.join(', ')}. ` +
+        'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.',
     );
   }
 
@@ -222,7 +220,7 @@ export function repoConfig<T extends { id: string }>(
     buildTraceContext: (
       op: WriteOp,
       mergeContext?: any,
-      serverTimestamp?: any
+      serverTimestamp?: any,
     ): any => {
       const context = mergeContext
         ? { ...traceContext, ...mergeContext }
@@ -289,7 +287,7 @@ export function repoConfig<T extends { id: string }>(
 
     validateNoReadonly: (
       keys: string[],
-      operation: WriteOp | 'unset'
+      operation: WriteOp | 'unset',
     ): void => {
       const readonlyKeys = keys.filter((key) => READONLY_KEYS.has(key));
 
@@ -303,9 +301,7 @@ export function repoConfig<T extends { id: string }>(
 
       if (conflictingKeys.length > 0) {
         throw new Error(
-          `Cannot ${operation} readonly properties: ${conflictingKeys.join(
-            ', '
-          )}`
+          `Cannot ${operation} readonly properties: ${conflictingKeys.join(', ')}`,
         );
       }
     },
@@ -313,12 +309,12 @@ export function repoConfig<T extends { id: string }>(
     // TODO - check if still needed
     validateScopeProperties: (
       entity: any,
-      operation: WriteOp | 'unset'
+      operation: WriteOp | 'unset',
     ): void => {
       for (const [key, expectedValue] of Object.entries(scopeObj)) {
         if (key in entity && entity[key] !== expectedValue) {
           throw new Error(
-            `Cannot ${operation} entity: scope property '${key}' must be '${expectedValue}', got '${entity[key]}'`
+            `Cannot ${operation} entity: scope property '${key}' must be '${expectedValue}', got '${entity[key]}'`,
           );
         }
       }
@@ -327,7 +323,7 @@ export function repoConfig<T extends { id: string }>(
     scopeBreach: (input: any): boolean => {
       const data = input ?? {};
       return Object.entries(scopeObj).some(
-        ([k, v]) => data[k] !== undefined && v !== data[k]
+        ([k, v]) => data[k] !== undefined && v !== data[k],
       );
     },
 

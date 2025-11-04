@@ -9,7 +9,7 @@ let emulatorProcess = null;
 async function startEmulator() {
   console.log('🔥 Starting Firestore emulator...');
   console.log(
-    `🔍 Checking if ports ${requiredPorts.join(', ')} are available...`
+    `🔍 Checking if ports ${requiredPorts.join(', ')} are available...`,
   );
 
   const portsInUse = await getPortsInUse();
@@ -33,7 +33,7 @@ async function startEmulator() {
       stdio: 'pipe',
       detached: process.platform !== 'win32', // Create new process group on Unix
       cwd: __dirname, // Ensure we're in the right directory to find package.json
-    }
+    },
   );
 
   // Wait for emulator to be ready
@@ -78,7 +78,7 @@ async function stopEmulator() {
   }
 
   console.log(
-    `🛑 Stopping Firestore emulator (PID: ${emulatorProcess.pid})...`
+    `🛑 Stopping Firestore emulator (PID: ${emulatorProcess.pid})...`,
   );
 
   // Check if process is actually running
@@ -130,7 +130,7 @@ async function stopEmulator() {
 
   if (portsStillInUse.length > 0) {
     console.warn(
-      `⚠️  Ports still in use after cleanup: ${portsStillInUse.join(', ')}`
+      `⚠️  Ports still in use after cleanup: ${portsStillInUse.join(', ')}`,
     );
   } else {
     console.log('✅ All ports successfully released');
@@ -172,7 +172,7 @@ async function getPortsInUse() {
   const ports = await Promise.all(requiredPorts.map((p) => isPortInUse(p)));
   return ports.reduce(
     (res, inUse, idx) => (inUse ? [...res, requiredPorts[idx]] : res),
-    []
+    [],
   );
 }
 

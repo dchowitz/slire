@@ -10,7 +10,7 @@ import {
   Timestamp,
   Transaction,
 } from '@google-cloud/firestore';
-import chunk from 'lodash/chunk'
+import chunk from 'lodash/chunk';
 import { QueryStream } from './query-stream';
 import {
   ManagedFields,
@@ -57,22 +57,22 @@ export type FirestoreRepo<
   >,
   UpdateInput extends Record<string, unknown> = Omit<T, Managed>,
   CreateInput extends Record<string, unknown> = UpdateInput &
-    Partial<Pick<T, Managed>>
+    Partial<Pick<T, Managed>>,
 > = Prettify<
   SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> & {
     collection: CollectionReference<T>;
     applyConstraints: (query: Query) => Query;
     buildUpdateOperation: (
       update: UpdateOperation<UpdateInput>,
-      mergeTrace?: any
+      mergeTrace?: any,
     ) => Record<string, any>;
     withTransaction(
-      transaction: Transaction
+      transaction: Transaction,
     ): FirestoreRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>;
     runTransaction<R>(
       operation: (
-        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>
-      ) => Promise<R>
+        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
+      ) => Promise<R>,
     ): Promise<R>;
   }
 >;
@@ -112,7 +112,7 @@ export function createSmartFirestoreRepo<
   >,
   UpdateInput extends Record<string, unknown> = Omit<T, Managed>,
   CreateInput extends Record<string, unknown> = UpdateInput &
-    Partial<Pick<T, Managed>>
+    Partial<Pick<T, Managed>>,
 >({
   collection,
   firestore,
@@ -134,7 +134,7 @@ export function createSmartFirestoreRepo<
   if (config.getTraceStrategy() === 'bounded') {
     throw new Error(
       'Firestore does not support "bounded" trace strategy due to lack of server-side array slicing. ' +
-        'Use "latest" for single trace or "unbounded" for unlimited trace history.'
+        'Use "latest" for single trace or "unbounded" for unlimited trace history.',
     );
   }
 
@@ -159,7 +159,7 @@ export function createSmartFirestoreRepo<
   // Firestore-specific timestamp handling using shared config
   function applyTimestamps(
     op: WriteOp,
-    firestoreUpdate: Record<string, any>
+    firestoreUpdate: Record<string, any>,
   ): Record<string, any> {
     if (!config.timestampsEnabled) {
       return firestoreUpdate;
@@ -203,7 +203,7 @@ export function createSmartFirestoreRepo<
   // Firestore-specific version handling using shared config
   function applyVersion(
     op: WriteOp,
-    firestoreUpdate: Record<string, any>
+    firestoreUpdate: Record<string, any>,
   ): Record<string, any> {
     if (!config.shouldIncrementVersion()) {
       return firestoreUpdate;
@@ -233,12 +233,12 @@ export function createSmartFirestoreRepo<
   function applyTrace(
     op: WriteOp,
     firestoreUpdate: Record<string, any>,
-    contextOverride?: any
+    contextOverride?: any,
   ): Record<string, any> {
     const traceValue = config.buildTraceContext(
       op,
       contextOverride,
-      FieldValue.serverTimestamp()
+      FieldValue.serverTimestamp(),
     );
     if (!traceValue) {
       return firestoreUpdate;
@@ -276,7 +276,7 @@ export function createSmartFirestoreRepo<
   // helper to map Firestore doc to entity
   function fromFirestoreDoc<P extends Projection<T>>(
     doc: QueryDocumentSnapshot | DocumentSnapshot,
-    projection?: P
+    projection?: P,
   ): Projected<T, P> | null {
     if (!doc.exists) {
       return null;
@@ -308,7 +308,7 @@ export function createSmartFirestoreRepo<
 
     // no projection, return all fields except hidden meta-keys
     const filteredData = Object.fromEntries(
-      Object.entries(docData).filter(([k]) => !config.isHiddenField(k))
+      Object.entries(docData).filter(([k]) => !config.isHiddenField(k)),
     );
 
     return { [idKey]: docId, ...filteredData } as Projected<T, P> as any;
@@ -317,14 +317,16 @@ export function createSmartFirestoreRepo<
   // helper to map entity to Firestore doc data, omitting all undefined properties and system fields
   function toFirestoreDoc(
     entity: CreateInput,
-    op: 'create'
+    op: 'create',
   ): { docId: string; docData: any } {
     const { [idKey]: _ignoredId, ...entityData } = entity as any;
     config.validateScopeProperties(entityData, op);
 
     // Strip all system-managed fields to prevent external manipulation
     const strippedEntityData = Object.fromEntries(
-      Object.entries(entityData).filter(([key]) => !config.isReadOnlyField(key))
+      Object.entries(entityData).filter(
+        ([key]) => !config.isReadOnlyField(key),
+      ),
     );
 
     const filtered = deepFilterUndefined(strippedEntityData);
@@ -345,7 +347,7 @@ export function createSmartFirestoreRepo<
   // helper to build Firestore update operation from set/unset
   function buildUpdateOperation(
     update: UpdateOperation<UpdateInput>,
-    mergeTrace?: any
+    mergeTrace?: any,
   ): Record<string, any> {
     const { set } = update;
     const unset = update.unset ? [update.unset].flat() : undefined;
@@ -355,11 +357,11 @@ export function createSmartFirestoreRepo<
       // check for overlapping keys
       const setKeys = Object.keys(set);
       const overlappingKeys = setKeys.filter((key) =>
-        unset.includes(key as any)
+        unset.includes(key as any),
       );
       if (overlappingKeys.length > 0) {
         throw new Error(
-          `Cannot set and unset the same fields: ${overlappingKeys.join(', ')}`
+          `Cannot set and unset the same fields: ${overlappingKeys.join(', ')}`,
         );
       }
     }
@@ -379,7 +381,7 @@ export function createSmartFirestoreRepo<
     return applyTrace(
       'update',
       applyVersion('update', applyTimestamps('update', firestoreUpdate)),
-      mergeTrace
+      mergeTrace,
     );
   }
 
@@ -393,7 +395,7 @@ export function createSmartFirestoreRepo<
   > = {
     getById: async <P extends Projection<T>>(
       id: string,
-      projection?: P
+      projection?: P,
     ): Promise<Projected<T, P> | undefined> => {
       const [found] = await repo.getByIds<P>([id], projection as P);
       return found[0] ?? undefined;
@@ -401,7 +403,7 @@ export function createSmartFirestoreRepo<
 
     getByIds: async <P extends Projection<T>>(
       ids: string[],
-      projection?: P
+      projection?: P,
     ): Promise<[Projected<T, P>[], string[]]> => {
       if (ids.length === 0) {
         return [[], []];
@@ -437,7 +439,7 @@ export function createSmartFirestoreRepo<
 
     create: async (
       entity: CreateInput,
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<string> => {
       const ids = await repo.createMany([entity], options);
       return ids[0];
@@ -445,7 +447,7 @@ export function createSmartFirestoreRepo<
 
     createMany: async (
       entities: CreateInput[],
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<string[]> => {
       if (entities.length < 1) {
         return [];
@@ -465,7 +467,7 @@ export function createSmartFirestoreRepo<
       ) {
         const batch = preparedDocs.slice(
           offset,
-          offset + FIRESTORE_MAX_WRITES_PER_BATCH
+          offset + FIRESTORE_MAX_WRITES_PER_BATCH,
         );
 
         const writeBatch = transaction ? null : firestore.batch();
@@ -476,7 +478,7 @@ export function createSmartFirestoreRepo<
           const finalData = applyTrace(
             'create',
             applyVersion('create', applyTimestamps('create', docData)),
-            options?.mergeTrace
+            options?.mergeTrace,
           );
 
           if (transaction) {
@@ -493,7 +495,7 @@ export function createSmartFirestoreRepo<
 
           // record successful inserts for this batch
           insertedSoFar.push(
-            ...preparedPublicIds.slice(offset, offset + batch.length)
+            ...preparedPublicIds.slice(offset, offset + batch.length),
           );
         } catch {
           // Firestore batch failed - entire batch fails atomically
@@ -513,11 +515,11 @@ export function createSmartFirestoreRepo<
     update: async (
       id: string,
       update: UpdateOperation<UpdateInput>,
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<void> => {
       const updateOperation = buildUpdateOperation(update, options?.mergeTrace);
       const query = applyConstraints(
-        collection.where(FieldPath.documentId(), '==', id).select()
+        collection.where(FieldPath.documentId(), '==', id).select(),
       );
 
       if (transaction) {
@@ -537,7 +539,7 @@ export function createSmartFirestoreRepo<
     updateMany: async (
       ids: string[],
       update: UpdateOperation<UpdateInput>,
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<void> => {
       if (ids.length < 1) {
         return;
@@ -546,12 +548,12 @@ export function createSmartFirestoreRepo<
       for (const idChunk of chunk(ids, FIRESTORE_MAX_WRITES_PER_BATCH)) {
         const updateOperation = buildUpdateOperation(
           update,
-          options?.mergeTrace
+          options?.mergeTrace,
         );
 
         for (const inChunk of chunk(idChunk, FIRESTORE_IN_LIMIT)) {
           const query = applyConstraints(
-            collection.where(FieldPath.documentId(), 'in', inChunk).select()
+            collection.where(FieldPath.documentId(), 'in', inChunk).select(),
           );
 
           if (transaction) {
@@ -573,17 +575,17 @@ export function createSmartFirestoreRepo<
 
     delete: async (
       id: string,
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<void> => {
       if (config.softDeleteEnabled) {
         const updateOperation = applyTrace(
           'delete',
           applyVersion('delete', applyTimestamps('delete', SOFT_DELETE_MARK)),
-          options?.mergeTrace
+          options?.mergeTrace,
         );
 
         const query = applyConstraints(
-          collection.where(FieldPath.documentId(), '==', id).select()
+          collection.where(FieldPath.documentId(), '==', id).select(),
         );
 
         if (transaction) {
@@ -609,7 +611,7 @@ export function createSmartFirestoreRepo<
 
     deleteMany: async (
       ids: string[],
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<void> => {
       if (ids.length < 1) {
         return;
@@ -619,7 +621,7 @@ export function createSmartFirestoreRepo<
         ? applyTrace(
             'delete',
             applyVersion('delete', applyTimestamps('delete', SOFT_DELETE_MARK)),
-            options?.mergeTrace
+            options?.mergeTrace,
           )
         : undefined;
 
@@ -629,10 +631,10 @@ export function createSmartFirestoreRepo<
         const snaps = await Promise.all(
           chunk(idChunk, FIRESTORE_IN_LIMIT).map((inChunk) => {
             const query = applyConstraints(
-              collection.where(FieldPath.documentId(), 'in', inChunk).select()
+              collection.where(FieldPath.documentId(), 'in', inChunk).select(),
             );
             return transaction ? transaction.get(query) : query.get();
-          })
+          }),
         );
 
         const batch = transaction ? undefined : firestore.batch();
@@ -665,7 +667,7 @@ export function createSmartFirestoreRepo<
         projection?: P;
         onScopeBreach?: 'empty' | 'error';
         orderBy?: OrderBy<T>;
-      }
+      },
     ): QueryStream<Projected<T, P>> => {
       if (config.scopeBreach(filter)) {
         const mode = options?.onScopeBreach ?? 'empty';
@@ -695,7 +697,7 @@ export function createSmartFirestoreRepo<
         for (const [field, dir] of Object.entries(options.orderBy)) {
           query = query.orderBy(
             field,
-            isAscending(dir as SortDirection) ? 'asc' : 'desc'
+            isAscending(dir as SortDirection) ? 'asc' : 'desc',
           );
           if (field === '__name__' || field === idKey) {
             orderByContainsId = true;
@@ -747,14 +749,14 @@ export function createSmartFirestoreRepo<
         projection?: P;
         onScopeBreach?: 'empty' | 'error';
         orderBy?: OrderBy<T>;
-      }
+      },
     ): QueryStream<Projected<T, P>> => {
       return repo.find<P>(spec.toFilter(), options as any);
     },
 
     findPage: async <P extends Projection<T> | undefined>(
       filter: Partial<T>,
-      options: FindPageOptions<T> & { projection?: P }
+      options: FindPageOptions<T> & { projection?: P },
     ): Promise<{
       items: Projected<T, P>[];
       nextCursor: string | undefined;
@@ -789,7 +791,7 @@ export function createSmartFirestoreRepo<
         for (const [field, dir] of Object.entries(options.orderBy)) {
           query = query.orderBy(
             field,
-            isAscending(dir as SortDirection) ? 'asc' : 'desc'
+            isAscending(dir as SortDirection) ? 'asc' : 'desc',
           );
           if (field === '__name__' || field === idKey) {
             orderByContainsId = true;
@@ -854,7 +856,7 @@ export function createSmartFirestoreRepo<
 
     findPageBySpec: async <P extends Projection<T>>(
       spec: Specification<T>,
-      options: FindPageOptions<T> & { projection?: P }
+      options: FindPageOptions<T> & { projection?: P },
     ): Promise<{
       items: Projected<T, P>[];
       nextCursor: string | undefined;
@@ -864,7 +866,7 @@ export function createSmartFirestoreRepo<
 
     count: async (
       filter: Partial<T>,
-      options?: { onScopeBreach?: 'zero' | 'error' }
+      options?: { onScopeBreach?: 'zero' | 'error' },
     ): Promise<number> => {
       let query: Query = collection;
 
@@ -894,7 +896,7 @@ export function createSmartFirestoreRepo<
 
     countBySpec: async (
       spec: Specification<T>,
-      options?: { onScopeBreach?: 'zero' | 'error' }
+      options?: { onScopeBreach?: 'zero' | 'error' },
     ): Promise<number> => {
       return repo.count(spec.toFilter(), options);
     },
@@ -925,8 +927,8 @@ export function createSmartFirestoreRepo<
     // Convenience method for running multiple repo functions in a transaction
     runTransaction: async <R>(
       operation: (
-        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>
-      ) => Promise<R>
+        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
+      ) => Promise<R>,
     ): Promise<R> => {
       return firestore.runTransaction(async (tx) => {
         const txRepo = repo.withTransaction(tx);
@@ -938,7 +940,7 @@ export function createSmartFirestoreRepo<
             Managed,
             UpdateInput,
             CreateInput
-          >
+          >,
         );
       });
     },

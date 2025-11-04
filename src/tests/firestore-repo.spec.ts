@@ -1,7 +1,7 @@
 import { CollectionReference } from '@google-cloud/firestore';
-import omit from 'lodash/omit'
-import range from 'lodash/range'
-import sortBy from 'lodash/sortBy'
+import omit from 'lodash/omit';
+import range from 'lodash/range';
+import sortBy from 'lodash/sortBy';
 import {
   convertFirestoreTimestamps,
   createSmartFirestoreRepo,
@@ -29,15 +29,15 @@ describe('createSmartFirestoreRepo', function () {
 
   function testCollection(): CollectionReference<TestEntity> {
     return firestore.firestore.collection(
-      COLLECTION_NAME
+      COLLECTION_NAME,
     ) as CollectionReference<TestEntity>;
   }
 
   function scopedTestCollection(
-    orgId: string
+    orgId: string,
   ): CollectionReference<TestEntity> {
     return firestore.firestore.collection(
-      `tenants/${orgId}/${COLLECTION_NAME}`
+      `tenants/${orgId}/${COLLECTION_NAME}`,
     ) as CollectionReference<TestEntity>;
   }
 
@@ -204,7 +204,7 @@ describe('createSmartFirestoreRepo', function () {
       const fixedTimestamp = new Date('2024-02-15T10:30:00.000Z');
       const repo = createSmartFirestoreRepo({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<TestEntityWithTimestamps>,
         firestore: firestore.firestore,
         options: {
@@ -405,7 +405,7 @@ describe('createSmartFirestoreRepo', function () {
             name: `User ${i}`,
             email: `user${i}@example.com`,
             age: 20 + i,
-          })
+          }),
         );
       }
 
@@ -479,7 +479,7 @@ describe('createSmartFirestoreRepo', function () {
       const entities: TestEntity[] = [];
       for (let i = 0; i < 1005; i++) {
         entities.push(
-          createTestEntity({ name: `U${i}`, email: `u${i}@e.com` })
+          createTestEntity({ name: `U${i}`, email: `u${i}@e.com` }),
         );
       }
 
@@ -559,7 +559,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const id = await base.create(
-        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' })
+        createTestEntity({ tenantId: 'tenant-A', name: 'Scoped' }),
       );
 
       const scoped = createSmartFirestoreRepo({
@@ -581,7 +581,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const createdIds = await repo.createMany(
-        range(0, 5).map((i) => createTestEntity({ name: `Entity ${i}` }))
+        range(0, 5).map((i) => createTestEntity({ name: `Entity ${i}` })),
       );
 
       const requestedIds = [
@@ -594,7 +594,7 @@ describe('createSmartFirestoreRepo', function () {
       expect(found).toHaveLength(3);
       expect(notFound).toHaveLength(2);
       expect(notFound).toEqual(
-        expect.arrayContaining(['non-existent-1', 'non-existent-2'])
+        expect.arrayContaining(['non-existent-1', 'non-existent-2']),
       );
 
       // check that all expected entities are found, regardless of order
@@ -620,7 +620,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const createdIds = await repo.createMany(
-        range(0, 3).map((i) => createTestEntity({ name: `Entity ${i}` }))
+        range(0, 3).map((i) => createTestEntity({ name: `Entity ${i}` })),
       );
 
       const requestedIds = [...createdIds, 'non-existent-1'];
@@ -654,13 +654,13 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const aId = await repo.create(
-        createTestEntity({ tenantId: 'acme', name: 'A' })
+        createTestEntity({ tenantId: 'acme', name: 'A' }),
       );
       const bId = await repo.create(
-        createTestEntity({ tenantId: 'acme', name: 'B' })
+        createTestEntity({ tenantId: 'acme', name: 'B' }),
       );
       const cId = await repo.create(
-        createTestEntity({ tenantId: 'other', name: 'C' })
+        createTestEntity({ tenantId: 'other', name: 'C' }),
       );
 
       // Soft delete B
@@ -917,7 +917,7 @@ describe('createSmartFirestoreRepo', function () {
       expect(rawData?.metadata).not.toHaveProperty('notes');
       expect(rawData?.metadata?.nested).not.toHaveProperty('field2');
       expect(rawData?.metadata?.nested?.deep).not.toHaveProperty(
-        'level3undefined'
+        'level3undefined',
       );
 
       // Verify null fields are preserved as null
@@ -938,13 +938,13 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ tenantId: 'acme', name: 'Original Name' })
+        createTestEntity({ tenantId: 'acme', name: 'Original Name' }),
       );
 
       await expect(
         repo.update(id, {
           set: { tenantId: 'foo', name: 'Updated Name' } as any,
-        })
+        }),
       ).rejects.toThrow('Cannot update readonly properties: tenantId');
 
       expect(await repo.getById(id, { tenantId: true, name: true })).toEqual({
@@ -967,14 +967,14 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ tenantId: 'acme', name: 'Original Name' })
+        createTestEntity({ tenantId: 'acme', name: 'Original Name' }),
       );
 
       await expect(
         repo.update(id, {
           set: { _v: 47, name: 'Updated Name' } as any,
           unset: ['_createdAt'] as any,
-        })
+        }),
       ).rejects.toThrow('Cannot update readonly properties: _v');
 
       expect(await repo.getById(id, { tenantId: true, name: true })).toEqual({
@@ -997,14 +997,14 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ tenantId: 'acme', name: 'Original Name' })
+        createTestEntity({ tenantId: 'acme', name: 'Original Name' }),
       );
 
       await expect(
         repo.update(id, {
           set: { name: 'Updated Name' },
           unset: ['_createdAt'] as any,
-        })
+        }),
       ).rejects.toThrow('Cannot unset readonly properties: _createdAt');
 
       expect(await repo.getById(id, { tenantId: true, name: true })).toEqual({
@@ -1118,7 +1118,7 @@ describe('createSmartFirestoreRepo', function () {
         firestore: firestore.firestore,
       });
       const entities = range(0, 5).map((i) =>
-        createTestEntity({ name: `Entity ${i}` })
+        createTestEntity({ name: `Entity ${i}` }),
       );
 
       const createdIds = await repo.createMany(entities);
@@ -1136,7 +1136,7 @@ describe('createSmartFirestoreRepo', function () {
         firestore: firestore.firestore,
       });
       const entities = range(0, 150).map((i) =>
-        createTestEntity({ name: `Entity ${i}` })
+        createTestEntity({ name: `Entity ${i}` }),
       );
 
       const createdIds = await repo.createMany(entities);
@@ -1361,7 +1361,7 @@ describe('createSmartFirestoreRepo', function () {
       const results = await repo
         .find(
           { name: 'Non-existent' },
-          { projection: { name: true, email: true } }
+          { projection: { name: true, email: true } },
         )
         .toArray();
 
@@ -1396,7 +1396,7 @@ describe('createSmartFirestoreRepo', function () {
         firestore: firestore.firestore,
       });
       const id = await base.create(
-        createTestEntity({ tenantId: 'wrong-tenant', name: 'Scoped' })
+        createTestEntity({ tenantId: 'wrong-tenant', name: 'Scoped' }),
       );
 
       const scoped = createSmartFirestoreRepo({
@@ -1441,7 +1441,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       expect(() =>
-        repo.find({ tenantId: 'other' }, { onScopeBreach: 'error' })
+        repo.find({ tenantId: 'other' }, { onScopeBreach: 'error' }),
       ).toThrow('Scope breach detected in find filter');
     });
   });
@@ -1465,7 +1465,7 @@ describe('createSmartFirestoreRepo', function () {
       const result = await pages(
         repo,
         {},
-        { limit: 2, projection: { name: true } }
+        { limit: 2, projection: { name: true } },
       );
 
       expect(result).toEqual([
@@ -1492,7 +1492,7 @@ describe('createSmartFirestoreRepo', function () {
       const result = await pages(
         repo,
         { isActive: true },
-        { limit: 1, projection: { name: true } } // implicit sort by id
+        { limit: 1, projection: { name: true } }, // implicit sort by id
       );
 
       expect(result).toEqual([[{ name: 'Alice' }], [{ name: 'David' }]]);
@@ -1522,7 +1522,7 @@ describe('createSmartFirestoreRepo', function () {
         {
           limit: 100,
           orderBy: { name: 'asc', age: 'desc', id: 'desc', email: 'asc' }, // email will be ignored
-        }
+        },
       );
 
       expect(page.items.map((u) => `${u.name}-${u.age}-${u.id}`)).toEqual([
@@ -1559,7 +1559,7 @@ describe('createSmartFirestoreRepo', function () {
 
       const page = await scoped.findPage(
         { tenantId: 'tenant-B' },
-        { limit: 10 }
+        { limit: 10 },
       );
       expect(page.items).toHaveLength(0);
       expect(page.nextCursor).toBeUndefined();
@@ -1575,8 +1575,8 @@ describe('createSmartFirestoreRepo', function () {
       await expect(
         scoped.findPage(
           { tenantId: 'tenant-B' },
-          { limit: 10, onScopeBreach: 'error' }
-        )
+          { limit: 10, onScopeBreach: 'error' },
+        ),
       ).rejects.toThrow('Scope breach detected in findPage filter');
     });
 
@@ -1587,7 +1587,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       await expect(
-        repo.findPage({}, { limit: 10, cursor: 'does-not-exist' })
+        repo.findPage({}, { limit: 10, cursor: 'does-not-exist' }),
       ).rejects.toThrow('Invalid cursor: document not found');
     });
 
@@ -1606,7 +1606,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       await expect(
-        scoped.findPage({}, { limit: 10, cursor: id })
+        scoped.findPage({}, { limit: 10, cursor: id }),
       ).rejects.toThrow('Invalid cursor: document not found');
     });
 
@@ -1621,7 +1621,7 @@ describe('createSmartFirestoreRepo', function () {
       await repo.delete(id);
 
       await expect(
-        repo.findPage({}, { limit: 10, cursor: id })
+        repo.findPage({}, { limit: 10, cursor: id }),
       ).rejects.toThrow('Invalid cursor: document not found');
     });
 
@@ -1733,7 +1733,7 @@ describe('createSmartFirestoreRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 4, orderBy: { name: 'asc' }, projection: { id: true } }
+          { limit: 4, orderBy: { name: 'asc' }, projection: { id: true } },
         );
 
         expect(result).toEqual([
@@ -1765,7 +1765,7 @@ describe('createSmartFirestoreRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 2, orderBy: { name: 'desc' }, projection: { name: true } }
+          { limit: 2, orderBy: { name: 'desc' }, projection: { name: true } },
         );
 
         expect(result).toEqual([
@@ -1797,7 +1797,7 @@ describe('createSmartFirestoreRepo', function () {
             limit: 2,
             orderBy: { age: 'desc', name: 'asc' },
             projection: { name: true, age: true },
-          }
+          },
         );
 
         expect(result).toEqual([
@@ -1831,7 +1831,7 @@ describe('createSmartFirestoreRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 4, orderBy: { age: 'asc' }, projection: { name: true } }
+          { limit: 4, orderBy: { age: 'asc' }, projection: { name: true } },
         );
 
         expect(result).toEqual([
@@ -1863,7 +1863,7 @@ describe('createSmartFirestoreRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 4, orderBy: { age: 'desc' }, projection: { name: true } }
+          { limit: 4, orderBy: { age: 'desc' }, projection: { name: true } },
         );
 
         expect(result).toEqual([
@@ -1895,7 +1895,7 @@ describe('createSmartFirestoreRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 4, orderBy: { age: 'asc' }, projection: { name: true } }
+          { limit: 4, orderBy: { age: 'asc' }, projection: { name: true } },
         );
 
         expect(result).toEqual([
@@ -1922,7 +1922,7 @@ describe('createSmartFirestoreRepo', function () {
         const result = await pages(
           repo,
           { isActive: true },
-          { limit: 20, orderBy: { age: 'desc' }, projection: { name: true } }
+          { limit: 20, orderBy: { age: 'desc' }, projection: { name: true } },
         );
         expect(result).toEqual([
           [{ name: 'Eve' }, { name: 'Charlie' }, { name: 'Alice' }],
@@ -1947,7 +1947,7 @@ describe('createSmartFirestoreRepo', function () {
         const result = await pages(
           repo,
           {},
-          { limit: 2, orderBy: { age: 'asc' }, projection: { name: true } }
+          { limit: 2, orderBy: { age: 'asc' }, projection: { name: true } },
         );
 
         expect(result).toEqual([
@@ -1978,7 +1978,7 @@ describe('createSmartFirestoreRepo', function () {
             limit: 2,
             orderBy: { 'metadata.notes': 'asc' },
             projection: { name: true },
-          }
+          },
         );
 
         expect(result).toEqual([
@@ -2009,7 +2009,7 @@ describe('createSmartFirestoreRepo', function () {
             limit: 2,
             orderBy: { age: 'asc', id: 'asc', name: 'desc' },
             projection: { name: true },
-          }
+          },
         );
 
         expect(result).toEqual([
@@ -2079,7 +2079,7 @@ describe('createSmartFirestoreRepo', function () {
         firestore: firestore.firestore,
       });
       const id = await base.create(
-        createTestEntity({ tenantId: 'wrong-tenant', name: 'Scoped' })
+        createTestEntity({ tenantId: 'wrong-tenant', name: 'Scoped' }),
       );
 
       const scoped = createSmartFirestoreRepo({
@@ -2099,7 +2099,7 @@ describe('createSmartFirestoreRepo', function () {
       expect(await repo.count({ tenantId: 'other' })).toBe(0);
 
       await expect(
-        repo.count({ tenantId: 'other' }, { onScopeBreach: 'error' })
+        repo.count({ tenantId: 'other' }, { onScopeBreach: 'error' }),
       ).rejects.toThrow('Scope breach detected in count filter');
     });
   });
@@ -2259,7 +2259,7 @@ describe('createSmartFirestoreRepo', function () {
 
       const foundAll = await repo.find({}).toArray();
       expect(foundAll.map((e) => e.name)).toEqual(
-        expect.arrayContaining(['A', 'C'])
+        expect.arrayContaining(['A', 'C']),
       );
 
       const gotB = await repo.getById(b);
@@ -2267,7 +2267,7 @@ describe('createSmartFirestoreRepo', function () {
 
       const [found, notFound] = await repo.getByIds([a, b, c]);
       expect(found.map((e) => e.name)).toEqual(
-        expect.arrayContaining(['A', 'C'])
+        expect.arrayContaining(['A', 'C']),
       );
       expect(notFound).toEqual([b]);
 
@@ -2333,7 +2333,7 @@ describe('createSmartFirestoreRepo', function () {
 
       const id = await scopedRepo.create(omit(createTestEntity(), 'tenantId'));
       const moreIds = await scopedRepo.createMany(
-        range(0, 2).map((_) => omit(createTestEntity(), 'tenantId'))
+        range(0, 2).map((_) => omit(createTestEntity(), 'tenantId')),
       );
 
       const result = await scopedRepo.getByIds([id, ...moreIds], {
@@ -2372,7 +2372,7 @@ describe('createSmartFirestoreRepo', function () {
         tenantId: 'not-acme', // doesn't match scope
       });
       await expect(scopedRepo.create(invalidEntity)).rejects.toThrow(
-        "Cannot create entity: scope property 'tenantId' must be 'acme', got 'not-acme'"
+        "Cannot create entity: scope property 'tenantId' must be 'acme', got 'not-acme'",
       );
     });
 
@@ -2395,17 +2395,17 @@ describe('createSmartFirestoreRepo', function () {
 
       // this should fail at runtime (scope property in set)
       await expect(
-        scopedRepo.update(id, { set: { tenantId: 'not-acme' } } as any)
+        scopedRepo.update(id, { set: { tenantId: 'not-acme' } } as any),
       ).rejects.toThrow('Cannot update readonly properties: tenantId');
 
       // this should fail at runtime (scope property in set even if it matches scope)
       await expect(
-        scopedRepo.update(id, { set: { tenantId: 'acme' } } as any)
+        scopedRepo.update(id, { set: { tenantId: 'acme' } } as any),
       ).rejects.toThrow('Cannot update readonly properties: tenantId');
 
       // this should fail at runtime (scope property in unset)
       await expect(
-        scopedRepo.update(id, { unset: ['tenantId'] } as any)
+        scopedRepo.update(id, { unset: ['tenantId'] } as any),
       ).rejects.toThrow('Cannot unset readonly properties: tenantId');
     });
 
@@ -2424,7 +2424,7 @@ describe('createSmartFirestoreRepo', function () {
       const activeUsers = await scopedRepo.find({ tenantId: 'acme' }).toArray();
       expect(activeUsers).toHaveLength(2);
       expect(
-        await scopedRepo.find({ tenantId: 'not-acme' }).toArray()
+        await scopedRepo.find({ tenantId: 'not-acme' }).toArray(),
       ).toHaveLength(0);
 
       const projectedUsers = await scopedRepo
@@ -2459,10 +2459,10 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       await expect(
-        scopedRepo.update(id1, { set: { age: 31 } } as any)
+        scopedRepo.update(id1, { set: { age: 31 } } as any),
       ).rejects.toThrow('Cannot update readonly properties: age');
       await expect(
-        scopedRepo.update(id2, { unset: ['tenantId'] } as any)
+        scopedRepo.update(id2, { unset: ['tenantId'] } as any),
       ).rejects.toThrow('Cannot unset readonly properties: tenantId');
     });
 
@@ -2554,7 +2554,7 @@ describe('createSmartFirestoreRepo', function () {
       type EntityWithAlias = TestEntity & { entityId: string };
       const repo = createSmartFirestoreRepo<EntityWithAlias>({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<EntityWithAlias>,
         firestore: firestore.firestore,
         options: { idKey: 'entityId' },
@@ -2583,7 +2583,7 @@ describe('createSmartFirestoreRepo', function () {
       });
       const id = await repo.create(createTestEntity({ name: 'E' }));
       await expect(
-        repo.update(id, { set: { id: 'hacked' } } as any)
+        repo.update(id, { set: { id: 'hacked' } } as any),
       ).rejects.toThrow('Cannot update readonly properties');
     });
   });
@@ -2613,7 +2613,7 @@ describe('createSmartFirestoreRepo', function () {
       const d2 = convertFirestoreTimestamps(raw.data());
       expect(d2?._updatedAt).toBeInstanceOf(Date);
       expect(d2!._updatedAt.getTime()).toBeGreaterThan(
-        d1!._updatedAt.getTime()
+        d1!._updatedAt.getTime(),
       );
 
       // ensure delete happens at a later timestamp
@@ -2625,7 +2625,7 @@ describe('createSmartFirestoreRepo', function () {
       // on delete, updatedAt and deletedAt should be equal and newer than previous updatedAt
       expect(d3!._updatedAt.getTime()).toBe(d3!._deletedAt.getTime());
       expect(d3!._updatedAt.getTime()).toBeGreaterThan(
-        d2!._updatedAt.getTime()
+        d2!._updatedAt.getTime(),
       );
     });
 
@@ -2647,7 +2647,7 @@ describe('createSmartFirestoreRepo', function () {
       raw = await rawTestCollection().doc(id).get();
       const d2 = convertFirestoreTimestamps(raw.data());
       expect(d2!._updatedAt.getTime()).toBeGreaterThan(
-        d1!._updatedAt.getTime()
+        d1!._updatedAt.getTime(),
       );
 
       await new Promise((r) => setTimeout(r, 2));
@@ -2656,7 +2656,7 @@ describe('createSmartFirestoreRepo', function () {
       const d3 = convertFirestoreTimestamps(raw.data());
       expect(d3!._updatedAt.getTime()).toBe(d3!._deletedAt.getTime());
       expect(d3!._updatedAt.getTime()).toBeGreaterThan(
-        d2!._updatedAt.getTime()
+        d2!._updatedAt.getTime(),
       );
     });
 
@@ -2700,7 +2700,7 @@ describe('createSmartFirestoreRepo', function () {
     it('should expose timestamp fields in reads when configured as entity properties', async () => {
       const repo = createSmartFirestoreRepo({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<EntityWithTimestamps>,
         firestore: firestore.firestore,
         options: {
@@ -2714,7 +2714,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ name: 'Timestamp Test' })
+        createTestEntity({ name: 'Timestamp Test' }),
       );
 
       const retrieved = await repo.getById(id);
@@ -2723,14 +2723,14 @@ describe('createSmartFirestoreRepo', function () {
       expect(retrieved!.createdAt).toBeInstanceOf(Date);
       expect(retrieved!.updatedAt).toBeInstanceOf(Date);
       expect(retrieved!.createdAt.getTime()).toBe(
-        retrieved!.updatedAt.getTime()
+        retrieved!.updatedAt.getTime(),
       );
     });
 
     it('should support projections including timestamp fields', async () => {
       const repo = createSmartFirestoreRepo({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<EntityWithTimestamps>,
         firestore: firestore.firestore,
         options: {
@@ -2743,7 +2743,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ name: 'Projection Test' })
+        createTestEntity({ name: 'Projection Test' }),
       );
 
       const timestampsOnly = await repo.getById(id, {
@@ -2765,7 +2765,7 @@ describe('createSmartFirestoreRepo', function () {
 
       const repo = createSmartFirestoreRepo({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<EntityWithTimestamps>,
         firestore: firestore.firestore,
         options: {
@@ -2790,7 +2790,7 @@ describe('createSmartFirestoreRepo', function () {
       const updated = (await repo.getById(id)) as any;
       expect(updated.name).toBe('Updated Name');
       expect(updated.createdAt.getTime()).toBe(
-        new Date('2023-01-01T00:00:00Z').getTime()
+        new Date('2023-01-01T00:00:00Z').getTime(),
       );
       expect(updated.updatedAt.getTime()).toBe(testTime.getTime());
     });
@@ -2798,7 +2798,7 @@ describe('createSmartFirestoreRepo', function () {
     it('should prevent writing to configured timestamp fields', async () => {
       const repo = createSmartFirestoreRepo({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<EntityWithTimestamps>,
         firestore: firestore.firestore,
         options: {
@@ -2813,18 +2813,18 @@ describe('createSmartFirestoreRepo', function () {
       const id = await repo.create(createTestEntity({ name: 'Readonly Test' }));
 
       await expect(
-        repo.update(id, { set: { createdAt: new Date() } } as any)
+        repo.update(id, { set: { createdAt: new Date() } } as any),
       ).rejects.toThrow('Cannot update readonly properties: createdAt');
 
       await expect(
-        repo.update(id, { set: { updatedAt: new Date() } } as any)
+        repo.update(id, { set: { updatedAt: new Date() } } as any),
       ).rejects.toThrow('Cannot update readonly properties: updatedAt');
     });
 
     it('should support partial timestamp configuration', async () => {
       const repo = createSmartFirestoreRepo({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<EntityWithTimestamps>,
         firestore: firestore.firestore,
         options: {
@@ -2856,7 +2856,7 @@ describe('createSmartFirestoreRepo', function () {
     it('should automatically enable timestamps when timestampKeys are configured', async () => {
       const repo = createSmartFirestoreRepo({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<EntityWithTimestamps>,
         firestore: firestore.firestore,
         options: {
@@ -2868,7 +2868,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ name: 'Auto Timestamps Test' })
+        createTestEntity({ name: 'Auto Timestamps Test' }),
       );
 
       const retrieved = (await repo.getById(id)) as any;
@@ -2950,7 +2950,7 @@ describe('createSmartFirestoreRepo', function () {
 
       const repo = createSmartFirestoreRepo<VersionedEntity>({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<VersionedEntity>,
         firestore: firestore.firestore,
         options: { version: 'version' },
@@ -2977,7 +2977,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ name: 'Delete Version Test' })
+        createTestEntity({ name: 'Delete Version Test' }),
       );
 
       // check initial version
@@ -3024,7 +3024,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ name: 'No Version Test' })
+        createTestEntity({ name: 'No Version Test' }),
       );
 
       // should not have version field
@@ -3049,7 +3049,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const [id1, id2, id3] = await repo.createMany(
-        range(0, 3).map((_) => createTestEntity())
+        range(0, 3).map((_) => createTestEntity()),
       );
 
       t = new Date('2025-01-01T00:00:01.000Z');
@@ -3067,13 +3067,13 @@ describe('createSmartFirestoreRepo', function () {
       await batch.commit();
 
       const raw1 = convertFirestoreTimestamps(
-        (await rawTestCollection().doc(id1).get()).data()
+        (await rawTestCollection().doc(id1).get()).data(),
       );
       const raw2 = convertFirestoreTimestamps(
-        (await rawTestCollection().doc(id2).get()).data()
+        (await rawTestCollection().doc(id2).get()).data(),
       );
       const raw3 = convertFirestoreTimestamps(
-        (await rawTestCollection().doc(id3).get()).data()
+        (await rawTestCollection().doc(id3).get()).data(),
       );
 
       expect(raw1).toMatchObject({ name: 'Updated1', _updatedAt: t });
@@ -3090,10 +3090,10 @@ describe('createSmartFirestoreRepo', function () {
 
       // readonly system fields
       expect(() =>
-        repo.buildUpdateOperation({ set: { _createdAt: new Date() } as any })
+        repo.buildUpdateOperation({ set: { _createdAt: new Date() } as any }),
       ).toThrow('Cannot update readonly properties: _createdAt');
       expect(() =>
-        repo.buildUpdateOperation({ unset: ['_deleted'] as any })
+        repo.buildUpdateOperation({ unset: ['_deleted'] as any }),
       ).toThrow('Cannot unset readonly properties: _deleted');
 
       // scope properties become readonly on update when scope configured
@@ -3103,10 +3103,10 @@ describe('createSmartFirestoreRepo', function () {
         scope: { tenantId: 'acme' },
       });
       expect(() =>
-        scoped.buildUpdateOperation({ set: { tenantId: 'x' } as any })
+        scoped.buildUpdateOperation({ set: { tenantId: 'x' } as any }),
       ).toThrow('Cannot update readonly properties: tenantId');
       expect(() =>
-        scoped.buildUpdateOperation({ unset: ['tenantId'] as any })
+        scoped.buildUpdateOperation({ unset: ['tenantId'] as any }),
       ).toThrow('Cannot unset readonly properties: tenantId');
     });
 
@@ -3125,7 +3125,7 @@ describe('createSmartFirestoreRepo', function () {
       await repo.delete(b);
 
       const q = repo.applyConstraints(
-        repo.collection.where('name', 'in', ['A', 'B'])
+        repo.collection.where('name', 'in', ['A', 'B']),
       );
       const snap = await (q as any).get();
       const names = snap.docs.map((d: any) => d.data().name);
@@ -3153,7 +3153,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const q = scoped.applyConstraints(
-        scoped.collection.where('name', 'in', ['A', 'B'])
+        scoped.collection.where('name', 'in', ['A', 'B']),
       );
       const snap = await (q as any).get();
       const names = snap.docs.map((d: any) => d.data().name).sort();
@@ -3221,7 +3221,7 @@ describe('createSmartFirestoreRepo', function () {
       const finalEntities = await repo.find({ age: 40 }).toArray();
       expect(finalEntities).toHaveLength(3);
       expect(finalEntities.map((e) => e.name)).toEqual(
-        expect.arrayContaining(['Run TX 1', 'Run TX 2', 'Run TX 3'])
+        expect.arrayContaining(['Run TX 1', 'Run TX 2', 'Run TX 3']),
       );
     });
 
@@ -3260,7 +3260,7 @@ describe('createSmartFirestoreRepo', function () {
       } catch (error) {
         expect(error).toBeInstanceOf(Error);
         expect((error as Error).message).toBe(
-          'Intentional transaction failure'
+          'Intentional transaction failure',
         );
       }
 
@@ -3303,23 +3303,23 @@ describe('createSmartFirestoreRepo', function () {
       const finalEntities = await repo.find({}).toArray();
       expect(finalEntities).toHaveLength(2);
       expect(finalEntities.map((e) => e.name)).toEqual(
-        expect.arrayContaining(['Existing 1', 'Existing 2'])
+        expect.arrayContaining(['Existing 1', 'Existing 2']),
       );
       expect(finalEntities.map((e) => e.age)).toEqual(
-        expect.arrayContaining([20, 25])
+        expect.arrayContaining([20, 25]),
       );
     });
 
     it('should work with scoped repositories in transactions', async () => {
       const baseRepo = createSmartFirestoreRepo({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<TestEntity>,
         firestore: firestore.firestore,
       });
       const scopedRepo = createSmartFirestoreRepo({
         collection: firestore.firestore.collection(
-          COLLECTION_NAME
+          COLLECTION_NAME,
         ) as CollectionReference<TestEntity>,
         firestore: firestore.firestore,
         scope: { tenantId: 'acme' },
@@ -3338,7 +3338,7 @@ describe('createSmartFirestoreRepo', function () {
       // reads ignore scope; both should be visible in the base collection
       expect(allEntities).toHaveLength(2);
       expect(
-        allEntities.every((e) => e.tenantId === 'acme' && e.age === 88)
+        allEntities.every((e) => e.tenantId === 'acme' && e.age === 88),
       ).toBe(true);
     });
   });
@@ -3360,7 +3360,7 @@ describe('createSmartFirestoreRepo', function () {
         });
       }).toThrow(
         'Duplicate keys found in repository configuration: timestamp. ' +
-          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
+          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.',
       );
     });
 
@@ -3381,7 +3381,7 @@ describe('createSmartFirestoreRepo', function () {
         });
       }).toThrow(
         'Duplicate keys found in repository configuration: sharedKey. ' +
-          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
+          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.',
       );
     });
 
@@ -3402,7 +3402,7 @@ describe('createSmartFirestoreRepo', function () {
         });
       }).toThrow(
         'Duplicate keys found in repository configuration: _deleted. ' +
-          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.'
+          'All keys for timestamps, versioning, and soft-delete must be unique to prevent undefined behavior.',
       );
     });
 
@@ -3433,7 +3433,7 @@ describe('createSmartFirestoreRepo', function () {
       expect(() =>
         createSmartFirestoreRepo<EntityWithReadonlyFields>({
           collection: firestore.firestore.collection(
-            COLLECTION_NAME
+            COLLECTION_NAME,
           ) as CollectionReference<EntityWithReadonlyFields>,
           firestore: firestore.firestore,
           options: {
@@ -3447,9 +3447,9 @@ describe('createSmartFirestoreRepo', function () {
             created: new Date(),
             _updatedAt: new Date() as any,
           } as any,
-        })
+        }),
       ).toThrow(
-        'Readonly fields found in scope: _v, _deleted, created, _updatedAt'
+        'Readonly fields found in scope: _v, _deleted, created, _updatedAt',
       );
     });
 
@@ -3506,7 +3506,9 @@ describe('createSmartFirestoreRepo', function () {
 
       const id = await repo.create(
         createTestEntity({ name: 'Trace Only Merge (FS)' }),
-        { mergeTrace: { operation: 'one-off', actor: 'tester' } }
+        {
+          mergeTrace: { operation: 'one-off', actor: 'tester' },
+        },
       );
 
       const raw = await rawTestCollection().doc(id).get();
@@ -3549,7 +3551,7 @@ describe('createSmartFirestoreRepo', function () {
       });
 
       const id = await repo.create(
-        createTestEntity({ name: 'Trace Custom Key' })
+        createTestEntity({ name: 'Trace Custom Key' }),
       );
       const raw = await rawTestCollection().doc(id).get();
       const data = convertFirestoreTimestamps(raw.data());
@@ -3586,7 +3588,7 @@ describe('createSmartFirestoreRepo', function () {
         { set: { name: 'Updated' } },
         {
           mergeTrace: { operation: 'manual-edit' },
-        }
+        },
       );
       const raw2 = await rawTestCollection().doc(id).get();
       const data2 = convertFirestoreTimestamps(raw2.data());

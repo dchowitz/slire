@@ -55,13 +55,22 @@ export default [
   // Turn off stylistic rules that conflict with Prettier
   eslintConfigPrettier,
 
-  // Import plugin
+  // Imports
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
     plugins: {
       import: importPlugin,
     },
     rules: {
+      'sort-imports': [
+        'error',
+        {
+          ignoreDeclarationSort: true, // keep import/order in charge of import lines
+          ignoreCase: true,
+          allowSeparatedGroups: true,
+          // memberSyntaxSortOrder default is fine: ['none','all','multiple','single']
+        },
+      ],
       'import/order': [
         'error',
         {
@@ -87,22 +96,17 @@ export default [
 
   // Override or add rules here
   {
-    files: [
-      '**/*.ts',
-      '**/*.tsx',
-      '**/*.cts',
-      '**/*.mts',
-    ],
+    files: ['**/*.ts', '**/*.tsx', '**/*.cts', '**/*.mts'],
     rules: {
       '@typescript-eslint/no-unused-vars': [
-  'error',
-  {
-    argsIgnorePattern: '^_',
-    varsIgnorePattern: '^_',
-    caughtErrorsIgnorePattern: '^_',
-    ignoreRestSiblings: true
-  },
-],
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+        },
+      ],
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-empty-object-type': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',

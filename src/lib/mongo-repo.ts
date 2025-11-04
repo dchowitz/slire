@@ -1,4 +1,4 @@
-import chunk from 'lodash/chunk'
+import chunk from 'lodash/chunk';
 import { ClientSession, Collection, MongoClient, ObjectId } from 'mongodb';
 import { getMongoMinFilter } from './get-mongo-min-filter';
 import { QueryStream } from './query-stream';
@@ -42,22 +42,22 @@ export type MongoRepo<
   >,
   UpdateInput extends Record<string, unknown> = Omit<T, Managed>,
   CreateInput extends Record<string, unknown> = UpdateInput &
-    Partial<Pick<T, Managed>>
+    Partial<Pick<T, Managed>>,
 > = Prettify<
   SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> & {
     collection: Collection<T & { _id: string }>;
     applyConstraints: (input: any) => any;
     buildUpdateOperation: (
       update: UpdateOperation<UpdateInput>,
-      mergeTrace?: any
+      mergeTrace?: any,
     ) => any;
     withSession(
-      session: ClientSession
+      session: ClientSession,
     ): MongoRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>;
     runTransaction<R>(
       operation: (
-        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>
-      ) => Promise<R>
+        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
+      ) => Promise<R>,
     ): Promise<R>;
   }
 >;
@@ -98,7 +98,7 @@ export function createSmartMongoRepo<
   >,
   UpdateInput extends Record<string, unknown> = Omit<T, Managed>,
   CreateInput extends Record<string, unknown> = UpdateInput &
-    Partial<Pick<T, Managed>>
+    Partial<Pick<T, Managed>>,
 >({
   collection,
   mongoClient,
@@ -127,9 +127,9 @@ export function createSmartMongoRepo<
     useServerIds ? (id as ObjectId).toHexString() : (id as string);
 
   // centralized id handling helpers
-  const idFilter = (id: string): any => ({ _id: toMongoId(id) } as any);
+  const idFilter = (id: string): any => ({ _id: toMongoId(id) }) as any;
   const idsFilter = (ids: string[]): any =>
-    ({ _id: { $in: ids.map(toMongoId) } } as any);
+    ({ _id: { $in: ids.map(toMongoId) } }) as any;
   const getPublicIdFromDoc = (doc: any): string =>
     fromMongoId((doc as any)._id);
   const convertFilter = (filter: Partial<T>): any => {
@@ -141,13 +141,13 @@ export function createSmartMongoRepo<
     }
     return f;
   };
-  const filterForDoc = (doc: any): any => ({ _id: (doc as any)._id } as any);
+  const filterForDoc = (doc: any): any => ({ _id: (doc as any)._id }) as any;
 
   const getProjection = (projection?: Projection<T>): any =>
     projection
       ? {
           projection: Object.fromEntries(
-            Object.keys(projection).map((k) => [k === idKey ? '_id' : k, 1])
+            Object.keys(projection).map((k) => [k === idKey ? '_id' : k, 1]),
           ),
         }
       : undefined;
@@ -252,7 +252,7 @@ export function createSmartMongoRepo<
   function applyTrace(
     op: WriteOp,
     mongoUpdate: any,
-    contextOverride?: any
+    contextOverride?: any,
   ): any {
     const traceValue = config.buildTraceContext(op, contextOverride);
     if (!traceValue) {
@@ -329,7 +329,7 @@ export function createSmartMongoRepo<
   // helper to map Mongo doc to entity
   function fromMongoDoc<P extends Projection<T> | undefined>(
     doc: any,
-    projection?: P
+    projection?: P,
   ): Projected<T, P> {
     const { _id: mongoId, ...rest } = doc;
 
@@ -346,7 +346,7 @@ export function createSmartMongoRepo<
 
     // no projection, return all fields except hidden meta-keys
     const filteredRest = Object.fromEntries(
-      Object.entries(rest).filter(([k]) => !config.isHiddenField(k))
+      Object.entries(rest).filter(([k]) => !config.isHiddenField(k)),
     );
     return { [idKey]: fromMongoId(mongoId), ...filteredRest } as Projected<
       T,
@@ -364,8 +364,8 @@ export function createSmartMongoRepo<
     // Strip all system-managed fields to prevent external manipulation
     const strippedEntityData = Object.fromEntries(
       Object.entries(cleanEntityData).filter(
-        ([key]) => !config.isReadOnlyField(key)
-      )
+        ([key]) => !config.isReadOnlyField(key),
+      ),
     );
 
     const filtered = deepFilterUndefined(strippedEntityData);
@@ -382,7 +382,7 @@ export function createSmartMongoRepo<
   // helper to build MongoDB update operation from set/unset
   function buildUpdateOperation(
     update: UpdateOperation<UpdateInput>,
-    mergeTrace?: any
+    mergeTrace?: any,
   ): any {
     const { set } = update;
     const unset = update.unset ? [update.unset].flat() : undefined;
@@ -392,11 +392,11 @@ export function createSmartMongoRepo<
       // check for overlapping keys
       const setKeys = Object.keys(set);
       const overlappingKeys = setKeys.filter((key) =>
-        unset.includes(key as any)
+        unset.includes(key as any),
       );
       if (overlappingKeys.length > 0) {
         throw new Error(
-          `Cannot set and unset the same fields: ${overlappingKeys.join(', ')}`
+          `Cannot set and unset the same fields: ${overlappingKeys.join(', ')}`,
         );
       }
     }
@@ -408,16 +408,19 @@ export function createSmartMongoRepo<
 
     if (unset) {
       config.validateNoReadonly(unset.map(String), 'unset');
-      mongoUpdate.$unset = unset.reduce((acc, keyOrPath) => {
-        acc[String(keyOrPath)] = '';
-        return acc;
-      }, {} as Record<string, string>);
+      mongoUpdate.$unset = unset.reduce(
+        (acc, keyOrPath) => {
+          acc[String(keyOrPath)] = '';
+          return acc;
+        },
+        {} as Record<string, string>,
+      );
     }
 
     return applyTrace(
       'update',
       applyVersion('update', applyTimestamps('update', mongoUpdate)),
-      mergeTrace
+      mergeTrace,
     );
   }
 
@@ -429,23 +432,23 @@ export function createSmartMongoRepo<
   const repo: MongoRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> = {
     getById: async <P extends Projection<T>>(
       id: string,
-      projection?: P
+      projection?: P,
     ): Promise<Projected<T, P> | undefined> => {
       const doc = await collection.findOne(
         applyConstraints(idFilter(id)),
-        withSessionOptions(getProjection(projection))
+        withSessionOptions(getProjection(projection)),
       );
       return doc ? fromMongoDoc(doc, projection) : undefined;
     },
 
     getByIds: async <P extends Projection<T>>(
       ids: string[],
-      projection?: P
+      projection?: P,
     ): Promise<[Projected<T, P>[], string[]]> => {
       const docs = await collection
         .find(
           applyConstraints(idsFilter(ids)),
-          withSessionOptions(getProjection(projection))
+          withSessionOptions(getProjection(projection)),
         )
         .toArray();
       const foundIds = new Set(docs.map((doc) => getPublicIdFromDoc(doc)));
@@ -456,7 +459,7 @@ export function createSmartMongoRepo<
 
     create: async (
       entity: CreateInput,
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<string> => {
       const ids = await repo.createMany([entity], options);
       return ids[0];
@@ -464,7 +467,7 @@ export function createSmartMongoRepo<
 
     createMany: async (
       entities: CreateInput[],
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<string[]> => {
       if (entities.length < 1) {
         return [];
@@ -473,7 +476,7 @@ export function createSmartMongoRepo<
       // prepare all docs upfront so we have stable ids for reporting
       const preparedDocs = entities.map((e) => toMongoDoc(e, 'create'));
       const preparedPublicIds = preparedDocs.map((doc) =>
-        getPublicIdFromDoc(doc as any)
+        getPublicIdFromDoc(doc as any),
       );
 
       const insertedSoFar: string[] = [];
@@ -486,7 +489,7 @@ export function createSmartMongoRepo<
       ) {
         const batch = preparedDocs.slice(
           offset,
-          offset + MONGODB_MAX_MODIFICATIONS_PER_TRANSACTION
+          offset + MONGODB_MAX_MODIFICATIONS_PER_TRANSACTION,
         );
         const ops = batch.map((doc) => {
           const filter = applyConstraints(filterForDoc(doc));
@@ -494,9 +497,9 @@ export function createSmartMongoRepo<
             'create',
             applyVersion(
               'create',
-              applyTimestamps('create', { $setOnInsert: doc })
+              applyTimestamps('create', { $setOnInsert: doc }),
             ),
-            options?.mergeTrace
+            options?.mergeTrace,
           );
           return { updateOne: { filter, update, upsert: true } } as any;
         });
@@ -530,7 +533,7 @@ export function createSmartMongoRepo<
 
         // record successful inserts for this batch
         insertedSoFar.push(
-          ...preparedPublicIds.slice(offset, offset + batch.length)
+          ...preparedPublicIds.slice(offset, offset + batch.length),
         );
       }
 
@@ -541,7 +544,7 @@ export function createSmartMongoRepo<
     update: async (
       id: string,
       update: UpdateOperation<UpdateInput>,
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<void> => {
       await repo.updateMany([id], update as any, options);
     },
@@ -549,7 +552,7 @@ export function createSmartMongoRepo<
     updateMany: async (
       ids: string[],
       update: UpdateOperation<UpdateInput>,
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<void> => {
       if (ids.length < 1) {
         return;
@@ -561,26 +564,26 @@ export function createSmartMongoRepo<
       for (const idChunk of chunks) {
         const updateOperation = buildUpdateOperation(
           update,
-          options?.mergeTrace
+          options?.mergeTrace,
         );
         await collection.updateMany(
           applyConstraints(idsFilter(idChunk)),
           updateOperation,
-          withSessionOptions()
+          withSessionOptions(),
         );
       }
     },
 
     delete: async (
       id: string,
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<void> => {
       await repo.deleteMany([id], options);
     },
 
     deleteMany: async (
       ids: string[],
-      options?: { mergeTrace?: any }
+      options?: { mergeTrace?: any },
     ): Promise<void> => {
       // use chunking for large batches to avoid MongoDB limitations
       const chunks = chunk(ids, MONGODB_IN_OPERATOR_MAX_CLAUSES);
@@ -592,14 +595,14 @@ export function createSmartMongoRepo<
             'delete',
             applyVersion(
               'delete',
-              applyTimestamps('delete', { $set: SOFT_DELETE_MARK })
+              applyTimestamps('delete', { $set: SOFT_DELETE_MARK }),
             ),
-            options?.mergeTrace
+            options?.mergeTrace,
           );
           await collection.updateMany(
             filter,
             updateOperation,
-            withSessionOptions()
+            withSessionOptions(),
           );
         } else {
           await collection.deleteMany(filter, withSessionOptions());
@@ -613,7 +616,7 @@ export function createSmartMongoRepo<
         projection?: P;
         onScopeBreach?: 'empty' | 'error';
         orderBy?: OrderBy<T>;
-      }
+      },
     ): QueryStream<Projected<T, P>> => {
       if (config.scopeBreach(filter)) {
         const mode = options?.onScopeBreach ?? 'empty';
@@ -646,7 +649,7 @@ export function createSmartMongoRepo<
       const cursor = collection
         .find(
           applyConstraints(mongoFilter),
-          withSessionOptions(getProjection(options?.projection))
+          withSessionOptions(getProjection(options?.projection)),
         )
         .sort(sortOption);
 
@@ -673,14 +676,14 @@ export function createSmartMongoRepo<
         projection?: P;
         onScopeBreach?: 'empty' | 'error';
         orderBy?: OrderBy<T>;
-      }
+      },
     ): QueryStream<Projected<T, P>> => {
       return repo.find<P>(spec.toFilter(), options as any);
     },
 
     findPage: async <P extends Projection<T> | undefined>(
       filter: Partial<T>,
-      options: FindPageOptions<T> & { projection?: P }
+      options: FindPageOptions<T> & { projection?: P },
     ): Promise<{
       items: Projected<T, P>[];
       nextCursor: string | undefined;
@@ -724,9 +727,7 @@ export function createSmartMongoRepo<
           cursorId = toMongoId(options.cursor);
         } catch (error) {
           throw new Error(
-            `Invalid cursor: ${
-              error instanceof Error ? error.message : options.cursor
-            }`
+            `Invalid cursor: ${error instanceof Error ? error.message : options.cursor}`,
           );
         }
 
@@ -734,9 +735,9 @@ export function createSmartMongoRepo<
           applyConstraints({ _id: cursorId }),
           withSessionOptions({
             projection: Object.fromEntries(
-              Object.keys(sortOption).map((k) => [k, 1])
+              Object.keys(sortOption).map((k) => [k, 1]),
             ),
-          })
+          }),
         );
         if (!startAfterDoc) {
           throw new Error(`Invalid cursor: document not found`);
@@ -756,7 +757,7 @@ export function createSmartMongoRepo<
       let cursor = collection
         .find(
           applyConstraints(mongoFilter),
-          withSessionOptions(getProjection(options.projection))
+          withSessionOptions(getProjection(options.projection)),
         )
         .sort(sortOption);
 
@@ -785,7 +786,7 @@ export function createSmartMongoRepo<
 
     findPageBySpec: async <P extends Projection<T>>(
       spec: Specification<T>,
-      options: FindPageOptions<T> & { projection?: P }
+      options: FindPageOptions<T> & { projection?: P },
     ): Promise<{
       items: Projected<T, P>[];
       nextCursor: string | undefined;
@@ -795,7 +796,7 @@ export function createSmartMongoRepo<
 
     count: async (
       filter: Partial<T>,
-      options?: { onScopeBreach?: 'zero' | 'error' }
+      options?: { onScopeBreach?: 'zero' | 'error' },
     ): Promise<number> => {
       if (config.scopeBreach(filter)) {
         const mode = options?.onScopeBreach ?? 'zero';
@@ -808,13 +809,13 @@ export function createSmartMongoRepo<
       const mongoFilter = convertFilter(filter);
       return await collection.countDocuments(
         applyConstraints(mongoFilter),
-        withSessionOptions()
+        withSessionOptions(),
       );
     },
 
     countBySpec: async (
       spec: Specification<T>,
-      options?: { onScopeBreach?: 'zero' | 'error' }
+      options?: { onScopeBreach?: 'zero' | 'error' },
     ): Promise<number> => {
       return repo.count(spec.toFilter(), options);
     },
@@ -848,8 +849,8 @@ export function createSmartMongoRepo<
     // Convenience method for running multiple repo functions in a transaction
     runTransaction: async <R>(
       operation: (
-        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>
-      ) => Promise<R>
+        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
+      ) => Promise<R>,
     ): Promise<R> => {
       return mongoClient.withSession(async (clientSession) => {
         return clientSession.withTransaction(async () => {

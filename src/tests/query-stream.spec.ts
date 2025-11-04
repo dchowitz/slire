@@ -227,7 +227,7 @@ describe('QueryStream', () => {
           yield 2;
           throw new Error('Test error');
           yield 3; // This should not be reached
-        })()
+        })(),
       );
 
       const result: number[] = [];
@@ -251,7 +251,7 @@ describe('QueryStream', () => {
           yield 1;
           yield 2;
           throw new Error('Test error');
-        })()
+        })(),
       );
 
       await expect(errorStream.toArray()).rejects.toThrow('Test error');
@@ -265,7 +265,7 @@ describe('QueryStream', () => {
       await stream.toArray();
 
       await expect(stream.toArray()).rejects.toThrow(
-        'QueryStream has already been consumed and cannot be reused'
+        'QueryStream has already been consumed and cannot be reused',
       );
     });
 
@@ -277,7 +277,7 @@ describe('QueryStream', () => {
       }
 
       await expect(stream.toArray()).rejects.toThrow(
-        'QueryStream has already been consumed and cannot be reused'
+        'QueryStream has already been consumed and cannot be reused',
       );
     });
 
@@ -290,7 +290,7 @@ describe('QueryStream', () => {
 
       // Try to chain - should fail
       expect(() => stream.take(2)).toThrow(
-        'Cannot chain operations on an already-consumed QueryStream'
+        'Cannot chain operations on an already-consumed QueryStream',
       );
     });
 
@@ -313,7 +313,7 @@ describe('QueryStream', () => {
 
       // Try to chain on consumed derived stream - should fail
       expect(() => derived.take(2)).toThrow(
-        'Cannot chain operations on an already-consumed QueryStream'
+        'Cannot chain operations on an already-consumed QueryStream',
       );
     });
 
@@ -340,7 +340,7 @@ describe('QueryStream', () => {
       expect(result1).toEqual([1, 2, 3]);
 
       await expect(stream.toArray()).rejects.toThrow(
-        'QueryStream has already been consumed and cannot be reused'
+        'QueryStream has already been consumed and cannot be reused',
       );
     });
 
@@ -354,7 +354,7 @@ describe('QueryStream', () => {
 
       // Try to use toArray - should fail
       await expect(stream.toArray()).rejects.toThrow(
-        'QueryStream has already been consumed and cannot be reused'
+        'QueryStream has already been consumed and cannot be reused',
       );
     });
   });

@@ -20,8 +20,8 @@ export type DateKeys<T> = {
   [K in keyof T]: T[K] extends Date
     ? K
     : T[K] extends Date | undefined
-    ? K
-    : never;
+      ? K
+      : never;
 }[keyof T] &
   string;
 
@@ -32,10 +32,10 @@ export type ObjectKeys<T> = {
       ? never
       : K
     : T[K] extends object | undefined
-    ? T[K] extends Date | undefined
-      ? never
-      : K
-    : never;
+      ? T[K] extends Date | undefined
+        ? never
+        : K
+      : never;
 }[keyof T] &
   string;
 
@@ -44,8 +44,8 @@ export type StringKeys<T> = {
   [K in keyof T]: T[K] extends string
     ? K
     : T[K] extends string | undefined
-    ? K
-    : never;
+      ? K
+      : never;
 }[keyof T] &
   string;
 
@@ -66,65 +66,65 @@ export type Primitive =
 type Decrease<D> = D extends 4
   ? 3
   : D extends 3
-  ? 2
-  : D extends 2
-  ? 1
-  : D extends 1
-  ? 0
-  : never;
+    ? 2
+    : D extends 2
+      ? 1
+      : D extends 1
+        ? 0
+        : never;
 
 // dotted path to all properties that are optional, e.g. 'a.b.c'
 // depth-limited recursive for performance (2 dots)
 export type OptionalPropPath<
   T,
   Prefix extends string = '',
-  Depth extends number = 2
+  Depth extends number = 2,
 > = Depth extends never
   ? never
   : T extends Primitive
-  ? never
-  : T extends ReadonlyArray<any> | any[]
-  ? never
-  : T extends { [K in keyof T]: T[K] }
-  ? {
-      [K in Extract<keyof T, string>]:
-        | (undefined extends T[K]
-            ? Prefix extends ''
-              ? K
-              : `${Prefix}.${K}`
-            : never)
-        | OptionalPropPath<
-            T[K],
-            Prefix extends '' ? K : `${Prefix}.${K}`,
-            Decrease<Depth>
-          >;
-    }[Extract<keyof T, string>]
-  : never;
+    ? never
+    : T extends ReadonlyArray<any> | any[]
+      ? never
+      : T extends { [K in keyof T]: T[K] }
+        ? {
+            [K in Extract<keyof T, string>]:
+              | (undefined extends T[K]
+                  ? Prefix extends ''
+                    ? K
+                    : `${Prefix}.${K}`
+                  : never)
+              | OptionalPropPath<
+                  T[K],
+                  Prefix extends '' ? K : `${Prefix}.${K}`,
+                  Decrease<Depth>
+                >;
+          }[Extract<keyof T, string>]
+        : never;
 
 // dotted path to all properties that are of primitive types
 // depth-limited recursive for performance (2 dots)
 export type PrimitivePropPath<
   T,
   Prefix extends string = '',
-  Depth extends number = 2
+  Depth extends number = 2,
 > = Depth extends never
   ? never
   : T extends Primitive
-  ? never
-  : T extends ReadonlyArray<any> | any[]
-  ? never
-  : T extends { [K in keyof T]: T[K] }
-  ? {
-      [K in Extract<keyof T, string>]:
-        | (T[K] extends Primitive
-            ? Prefix extends ''
-              ? K
-              : `${Prefix}.${K}`
-            : never)
-        | PrimitivePropPath<
-            T[K],
-            Prefix extends '' ? K : `${Prefix}.${K}`,
-            Decrease<Depth>
-          >;
-    }[Extract<keyof T, string>]
-  : never;
+    ? never
+    : T extends ReadonlyArray<any> | any[]
+      ? never
+      : T extends { [K in keyof T]: T[K] }
+        ? {
+            [K in Extract<keyof T, string>]:
+              | (T[K] extends Primitive
+                  ? Prefix extends ''
+                    ? K
+                    : `${Prefix}.${K}`
+                  : never)
+              | PrimitivePropPath<
+                  T[K],
+                  Prefix extends '' ? K : `${Prefix}.${K}`,
+                  Decrease<Depth>
+                >;
+          }[Extract<keyof T, string>]
+        : never;

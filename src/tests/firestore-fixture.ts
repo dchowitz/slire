@@ -48,7 +48,7 @@ class FirestoreFixture {
       } catch (error) {
         console.warn(
           'Firestore teardown failed:',
-          error instanceof Error ? error.message : error
+          error instanceof Error ? error.message : error,
         );
         // Don't throw - teardown failures shouldn't break tests
       } finally {

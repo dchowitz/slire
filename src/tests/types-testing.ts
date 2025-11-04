@@ -57,7 +57,7 @@ function test<
   UpdateEntity extends Record<string, unknown> = Omit<T, M>,
   UnsetKeys extends OptionalKeys<UpdateEntity> = OptionalKeys<UpdateEntity>,
   CreateEntity extends Record<string, unknown> = Omit<T, M> &
-    Partial<Pick<T, M>>
+    Partial<Pick<T, M>>,
 >(_collection: Collection<T>, scope: S, _config: C) {
   console.log(scope);
   return {
@@ -76,7 +76,7 @@ const x = test(
     softDelete: true,
     timestampKeys: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
     version: 'version',
-  }
+  },
 );
 
 x.managed('id', 'version', 'createdAt', 'updatedAt');
@@ -90,7 +90,7 @@ const entity = test(
     softDelete: true,
     timestampKeys: { updatedAt: 'updatedAt' },
     version: '_v',
-  }
+  },
 );
 
 entity.managed('department', '_v');

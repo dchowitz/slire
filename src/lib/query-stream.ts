@@ -10,7 +10,7 @@ export class QueryStream<T> {
     return new QueryStream(
       (async function* () {
         // Empty generator
-      })()
+      })(),
     );
   }
 
@@ -25,7 +25,7 @@ export class QueryStream<T> {
   [Symbol.asyncIterator](): AsyncIterator<T> {
     if (this.consumed) {
       throw new Error(
-        'QueryStream has already been consumed and cannot be reused'
+        'QueryStream has already been consumed and cannot be reused',
       );
     }
     this.consumed = true;
@@ -35,7 +35,7 @@ export class QueryStream<T> {
   take(limit: number): QueryStream<T> {
     if (this.consumed) {
       throw new Error(
-        'Cannot chain operations on an already-consumed QueryStream'
+        'Cannot chain operations on an already-consumed QueryStream',
       );
     }
     const iterator = this._take(limit);
@@ -45,7 +45,7 @@ export class QueryStream<T> {
   skip(offset: number): QueryStream<T> {
     if (this.consumed) {
       throw new Error(
-        'Cannot chain operations on an already-consumed QueryStream'
+        'Cannot chain operations on an already-consumed QueryStream',
       );
     }
     const iterator = this._skip(offset);
@@ -55,7 +55,7 @@ export class QueryStream<T> {
   paged(pageSize: number): QueryStream<T[]> {
     if (this.consumed) {
       throw new Error(
-        'Cannot chain operations on an already-consumed QueryStream'
+        'Cannot chain operations on an already-consumed QueryStream',
       );
     }
     if (pageSize < 1) {

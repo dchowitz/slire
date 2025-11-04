@@ -48,37 +48,37 @@ export type SmartRepo<
   >,
   UpdateInput extends Record<string, unknown> = Omit<T, Managed>,
   CreateInput extends Record<string, unknown> = UpdateInput &
-    Partial<Pick<T, Managed>>
+    Partial<Pick<T, Managed>>,
 > = {
   getById(id: string): Promise<T | undefined>;
   getById<P extends Projection<T>>(
     id: string,
-    projection: P
+    projection: P,
   ): Promise<Projected<T, P> | undefined>;
   getByIds(ids: string[]): Promise<[T[], string[]]>;
   getByIds<P extends Projection<T>>(
     ids: string[],
-    projection: P
+    projection: P,
   ): Promise<[Projected<T, P>[], string[]]>;
 
   create(
     entity: Prettify<CreateInput>,
-    options?: { mergeTrace?: any }
+    options?: { mergeTrace?: any },
   ): Promise<string>;
   createMany(
     entities: Prettify<CreateInput>[],
-    options?: { mergeTrace?: any }
+    options?: { mergeTrace?: any },
   ): Promise<string[]>;
 
   update(
     id: string,
     update: UpdateOperation<UpdateInput>,
-    options?: { mergeTrace?: any }
+    options?: { mergeTrace?: any },
   ): Promise<void>;
   updateMany(
     ids: string[],
     update: UpdateOperation<UpdateInput>,
-    options?: { mergeTrace?: any }
+    options?: { mergeTrace?: any },
   ): Promise<void>;
 
   delete(id: string, options?: { mergeTrace?: any }): Promise<void>;
@@ -87,38 +87,38 @@ export type SmartRepo<
   find(filter: Partial<T>, options?: FindOptions<T>): QueryStream<T>;
   find<P extends Projection<T>>(
     filter: Partial<T>,
-    options: FindOptions<T> & { projection: P }
+    options: FindOptions<T> & { projection: P },
   ): QueryStream<Projected<T, P>>;
   findBySpec<S extends Specification<T>>(
     spec: S,
-    options?: FindOptions<T>
+    options?: FindOptions<T>,
   ): QueryStream<T>;
   findBySpec<S extends Specification<T>, P extends Projection<T>>(
     spec: S,
-    options: FindOptions<T> & { projection: P }
+    options: FindOptions<T> & { projection: P },
   ): QueryStream<Projected<T, P>>;
 
   findPage(
     filter: Partial<T>,
-    options: FindPageOptions<T>
+    options: FindPageOptions<T>,
   ): Promise<PageResult<T>>;
   findPage<P extends Projection<T>>(
     filter: Partial<T>,
-    options: FindPageOptions<T> & { projection: P }
+    options: FindPageOptions<T> & { projection: P },
   ): Promise<PageResult<Projected<T, P>>>;
   findPageBySpec<S extends Specification<T>>(
     spec: S,
-    options: FindPageOptions<T>
+    options: FindPageOptions<T>,
   ): Promise<PageResult<T>>;
   findPageBySpec<S extends Specification<T>, P extends Projection<T>>(
     spec: S,
-    options: FindPageOptions<T> & { projection: P }
+    options: FindPageOptions<T> & { projection: P },
   ): Promise<PageResult<Projected<T, P>>>;
 
   count(filter: Partial<T>, options?: CountOptions): Promise<number>;
   countBySpec<S extends Specification<T>>(
     spec: S,
-    options?: CountOptions
+    options?: CountOptions,
   ): Promise<number>;
 };
 
@@ -141,7 +141,7 @@ export class CreateManyPartialFailure extends Error {
   constructor(params: { insertedIds: string[]; failedIds: string[] }) {
     const total = params.insertedIds.length + params.failedIds.length;
     super(
-      `createMany partially inserted ${params.insertedIds.length}/${total} entities`
+      `createMany partially inserted ${params.insertedIds.length}/${total} entities`,
     );
     this.name = 'CreateManyPartialFailure';
     this.insertedIds = params.insertedIds;
@@ -156,7 +156,7 @@ export function combineSpecs<T>(
     toFilter: () =>
       specs.reduce(
         (filter, spec) => ({ ...filter, ...spec.toFilter() }),
-        {} as Partial<T>
+        {} as Partial<T>,
       ),
     describe: specs.map((spec) => spec.describe).join(' AND '),
   };
