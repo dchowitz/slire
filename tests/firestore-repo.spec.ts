@@ -5,12 +5,12 @@ import sortBy from 'lodash/sortBy';
 import {
   convertFirestoreTimestamps,
   createSmartFirestoreRepo,
-} from '../lib/firestore-repo';
+} from '../src/firestore-repo';
 import {
   combineSpecs,
   CreateManyPartialFailure,
   Specification,
-} from '../lib/smart-repo';
+} from '../src/smart-repo';
 import {
   clearFirestoreCollection,
   firestore,

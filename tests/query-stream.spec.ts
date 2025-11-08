@@ -1,4 +1,4 @@
-import { QueryStream } from '../lib/query-stream';
+import { QueryStream } from '../src/query-stream';
 
 describe('QueryStream', () => {
   describe('basic functionality', () => {

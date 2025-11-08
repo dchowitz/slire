@@ -1,2 +1,2 @@
-export * from './lib/smart-repo';
-export { QueryStream } from './lib/query-stream';
+export * from './smart-repo';
+export { QueryStream } from './query-stream';

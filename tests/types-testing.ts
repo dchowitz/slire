@@ -1,7 +1,7 @@
 import { Collection } from 'mongodb';
-import { ManagedFields, RepositoryConfig } from '../lib/repo-config';
-import { UpdateOperation } from '../lib/smart-repo';
-import { OptionalKeys } from '../lib/types';
+import { ManagedFields, RepositoryConfig } from '../src/repo-config';
+import { UpdateOperation } from '../src/smart-repo';
+import { OptionalKeys } from '../src/types';
 
 type Prettify<T> = {
   [K in keyof T]: T[K];

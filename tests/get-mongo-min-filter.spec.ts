@@ -1,5 +1,5 @@
 import { MinKey, ObjectId } from 'mongodb';
-import { getMongoMinFilter } from '../lib/get-mongo-min-filter';
+import { getMongoMinFilter } from '../src/get-mongo-min-filter';
 
 describe('getMongoMinFilter', () => {
   describe('single field ascending', () => {

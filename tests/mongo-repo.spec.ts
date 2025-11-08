@@ -2,13 +2,13 @@ import omit from 'lodash/omit';
 import range from 'lodash/range';
 import sortBy from 'lodash/sortBy';
 import { Collection, ObjectId } from 'mongodb';
-import { createSmartMongoRepo } from '../lib/mongo-repo';
+import { createSmartMongoRepo } from '../src/mongo-repo';
 import {
   combineSpecs,
   CreateManyPartialFailure,
   SmartRepo,
   Specification,
-} from '../lib/smart-repo';
+} from '../src/smart-repo';
 import { mongo, setupMongo, teardownMongo } from './mongo-fixture';
 import { ascendingIds, pages } from './utils';
 

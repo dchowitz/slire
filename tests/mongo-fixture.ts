@@ -3,7 +3,7 @@ import {
   StartedMongoDBContainer,
 } from '@testcontainers/mongodb';
 import { MongoClient } from 'mongodb';
-import { Maybe } from '../lib/types';
+import { Maybe } from '../src/types';
 
 process.env.DOCKER_HOST = `unix://${process.env.HOME}/.colima/default/docker.sock`;
 process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE = '/var/run/docker.sock';

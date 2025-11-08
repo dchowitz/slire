@@ -19,7 +19,7 @@
     "build": "tsup",
     "test": "jest",
     "clean": "rimraf dist",
-    "prepublishOnly": "npm run clean && npm run build && npm test",
+    "prepublishOnly": "npm run clean && npm run build && npm test && npm run lint && npm run format",
     "publish:dry": "npm publish --dry-run",
     "release": "npm run clean && npm run build && npm test && npm publish --access public --provenance",
     "lint": "eslint .",

@@ -10,7 +10,7 @@ export default [
   // Base TypeScript rules for source and tests
   ...tseslint.configs.recommended,
   {
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.ts', 'tests/**/*.ts'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
@@ -19,7 +19,7 @@ export default [
 
   // Jest test files: enable test globals
   {
-    files: ['src/tests/**/*.ts'],
+    files: ['tests/**/*.ts'],
     languageOptions: {
       globals: {
         // Common Jest globals
