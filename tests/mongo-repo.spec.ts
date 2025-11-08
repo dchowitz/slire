@@ -6,9 +6,9 @@ import { createSmartMongoRepo } from '../src/mongo-repo';
 import {
   combineSpecs,
   CreateManyPartialFailure,
-  SmartRepo,
+  Repo,
   Specification,
-} from '../src/smart-repo';
+} from '../src/repo';
 import { mongo, setupMongo, teardownMongo } from './mongo-fixture';
 import { ascendingIds, pages } from './utils';
 
@@ -2145,7 +2145,7 @@ describe('createSmartMongoRepo', function () {
 
       // Function that only accepts approved specs
       async function findByApprovedSpec<T extends { id: string }>(
-        repository: SmartRepo<T>,
+        repository: Repo<T>,
         spec: ApprovedSpecification<T>,
       ): Promise<T[]> {
         return repository.findBySpec(spec).toArray();

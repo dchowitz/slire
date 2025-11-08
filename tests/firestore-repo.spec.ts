@@ -10,7 +10,7 @@ import {
   combineSpecs,
   CreateManyPartialFailure,
   Specification,
-} from '../src/smart-repo';
+} from '../src/repo';
 import {
   clearFirestoreCollection,
   firestore,

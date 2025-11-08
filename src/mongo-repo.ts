@@ -3,6 +3,16 @@ import { ClientSession, Collection, MongoClient, ObjectId } from 'mongodb';
 import { getMongoMinFilter } from './get-mongo-min-filter';
 import { QueryStream } from './query-stream';
 import {
+  CreateManyPartialFailure,
+  type FindPageOptions,
+  isAscending,
+  OrderBy,
+  Repo,
+  SortDirection,
+  Specification,
+  UpdateOperation,
+} from './repo';
+import {
   ManagedFields,
   Projected,
   Projection,
@@ -10,16 +20,6 @@ import {
   RepositoryConfig,
   WriteOp,
 } from './repo-config';
-import {
-  CreateManyPartialFailure,
-  type FindPageOptions,
-  isAscending,
-  OrderBy,
-  SmartRepo,
-  SortDirection,
-  Specification,
-  UpdateOperation,
-} from './smart-repo';
 import { Prettify } from './types';
 
 // https://www.mongodb.com/resources/basics/databases/acid-transactions#:~:text=Limit%20each,1%2C000%20document%20modifications.
@@ -44,7 +44,7 @@ export type MongoRepo<
   CreateInput extends Record<string, unknown> = UpdateInput &
     Partial<Pick<T, Managed>>,
 > = Prettify<
-  SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> & {
+  Repo<T, Scope, Config, Managed, UpdateInput, CreateInput> & {
     collection: Collection<T & { _id: string }>;
     applyConstraints: (input: any) => any;
     buildUpdateOperation: (
@@ -56,7 +56,7 @@ export type MongoRepo<
     ): MongoRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>;
     runTransaction<R>(
       operation: (
-        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
+        txRepo: Repo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
       ) => Promise<R>,
     ): Promise<R>;
   }
@@ -849,7 +849,7 @@ export function createSmartMongoRepo<
     // Convenience method for running multiple repo functions in a transaction
     runTransaction: async <R>(
       operation: (
-        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
+        txRepo: Repo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
       ) => Promise<R>,
     ): Promise<R> => {
       return mongoClient.withSession(async (clientSession) => {

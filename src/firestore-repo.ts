@@ -13,6 +13,16 @@ import {
 import chunk from 'lodash/chunk';
 import { QueryStream } from './query-stream';
 import {
+  CreateManyPartialFailure,
+  type FindPageOptions,
+  isAscending,
+  OrderBy,
+  Repo,
+  SortDirection,
+  Specification,
+  UpdateOperation,
+} from './repo';
+import {
   ManagedFields,
   Projected,
   Projection,
@@ -20,16 +30,6 @@ import {
   RepositoryConfig,
   WriteOp,
 } from './repo-config';
-import {
-  CreateManyPartialFailure,
-  type FindPageOptions,
-  isAscending,
-  OrderBy,
-  SmartRepo,
-  SortDirection,
-  Specification,
-  UpdateOperation,
-} from './smart-repo';
 import { Prettify } from './types';
 
 // Firestore-specific repository config that excludes 'bounded' strategy
@@ -59,7 +59,7 @@ export type FirestoreRepo<
   CreateInput extends Record<string, unknown> = UpdateInput &
     Partial<Pick<T, Managed>>,
 > = Prettify<
-  SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput> & {
+  Repo<T, Scope, Config, Managed, UpdateInput, CreateInput> & {
     collection: CollectionReference<T>;
     applyConstraints: (query: Query) => Query;
     buildUpdateOperation: (
@@ -71,7 +71,7 @@ export type FirestoreRepo<
     ): FirestoreRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>;
     runTransaction<R>(
       operation: (
-        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
+        txRepo: Repo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
       ) => Promise<R>,
     ): Promise<R>;
   }
@@ -927,20 +927,13 @@ export function createSmartFirestoreRepo<
     // Convenience method for running multiple repo functions in a transaction
     runTransaction: async <R>(
       operation: (
-        txRepo: SmartRepo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
+        txRepo: Repo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
       ) => Promise<R>,
     ): Promise<R> => {
       return firestore.runTransaction(async (tx) => {
         const txRepo = repo.withTransaction(tx);
         return operation(
-          txRepo as SmartRepo<
-            T,
-            Scope,
-            Config,
-            Managed,
-            UpdateInput,
-            CreateInput
-          >,
+          txRepo as Repo<T, Scope, Config, Managed, UpdateInput, CreateInput>,
         );
       });
     },

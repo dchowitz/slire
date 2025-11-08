@@ -37,7 +37,7 @@ export type PageResult<T> = {
   nextCursor: string | undefined;
 };
 
-export type SmartRepo<
+export type Repo<
   T extends { id: string },
   Scope extends Partial<T> = {},
   Config extends RepositoryConfig<T> = {},
