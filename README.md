@@ -159,212 +159,9 @@ await repo.runTransaction(async (tx) => {
 });
 ```
 
-This is a partially contrived example. For MongoDB, you’d normally perform a query‑based update in one round trip using the native driver directly. Firestore does not support query‑based writes, so they are not part of Slire’s API.
+This is a partially contrived example. For MongoDB, you’d normally perform a query‑based update in one round trip using the native driver directly. Firestore does not support query‑based writes, so they are not part of Slire’s DB-agnostic API.
 
 The example above can be written more verbosely like this when working with MongoDB (revealing how `runTransaction` is implemented):
-
-```typescript
-await mongoClient.withSession(async (session) => {
-  await session.withTransaction(async () => {
-    const tx = repo.withSession(session); // a new transaction-aware repo instance
-
-    const now = new Date();
-    const tasks = await tx
-      .find({ status: 'in_progress' }, { id: true, dueDate: true })
-      .toArray();
-
-    const overdueIds = tasks
-      .filter((t) => t.dueDate && t.dueDate < now)
-      .map((t) => t.id);
-
-    if (overdueIds.length > 0) {
-      await tx.updateMany(overdueIds, { set: { status: 'archived' } });
-    }
-  });
-});
-```
-
-## API Overview
-
-- **CRUD**: `getById`, `getByIds`, `create`, `createMany`, `update`, `updateMany`, `delete`, `deleteMany`
-- **Query**: `find`, `findBySpec`, `findPage`, `findPageBySpec`, `count`, `countBySpec`
-- **Transactions**:
-  - MongoDB: `withSession(session)`, `runTransaction(cb)`
-  - Firestore: `withTransaction(tx)`, `runTransaction(cb)`
-- **Helpers** (advanced/native use):
-  - `collection` (native handle)
-  - `applyConstraints(...)` (adds scope, soft-delete filtering)
-  - `buildUpdateOperation(update, mergeTrace?)` (applies timestamps/version/trace; protects readonly fields)
-
-For in-depth details, see the sections below (MongoDB/Firestore implementations and the full API reference).
-
-## Configuration
-
-Key options (shared unless noted):
-
-- **Identity**
-  - `generateId?: 'server' | (() => string)` — default `'server'` (Mongo ObjectId / Firestore doc id)
-  - `idKey?: keyof T` — default `'id'`
-  - `mirrorId?: boolean` — persist public id in documents (off by default)
-- **Consistency**
-  - `softDelete?: boolean` — enable soft delete
-  - `traceTimestamps?: true | 'server' | (() => Date)` — timestamp source
-  - `timestampKeys?: { createdAt?; updatedAt?; deletedAt? }` — custom keys imply timestamping
-  - `version?: true | keyof T` — versioning field (default `_version`)
-- **Tracing**
-  - `traceKey?: keyof T` — default `_trace`
-  - `traceStrategy?: 'latest' | 'bounded' | 'unbounded'`
-    - Firestore: `'bounded'` not supported (throws)
-  - `traceLimit?: number` — required for `'bounded'`
-
-## Database Differences
-
-### MongoDB
-
-- **Soft delete**: filters on “marker does not exist”; deletes set the marker.
-- **Pagination**: cursor is `_id` (ObjectId string) and `_id` is always a tiebreaker; compound sorts supported with a cursor filter.
-- **Updates**: query-based (`updateMany`); large inputs chunked to respect driver limits.
-- **Tracing**: all strategies supported; server timestamps via `$currentDate` when configured.
-
-### Firestore
-
-- **Soft delete**: documents created with `_deleted: false`, reads filter `_deleted == false`.
-- **Pagination**: cursor is document id; sort requires `__name__` tiebreaker.
-- **Updates**: batched writes; multi-document updates chunked (`IN` limits).
-- **Tracing**: supports `'latest'` and `'unbounded'` (throws on `'bounded'`).
-- **Transactions**: reads must occur before writes; repository methods that read inside must be called in the read phase.
-
-## Transactions
-
-MongoDB
-
-```typescript
-await repo.runTransaction(async (tx) => {
-  const now = new Date();
-  // Read overdue in-progress tasks, then archive them
-  const tasks = await tx
-    .find({ status: 'in_progress' }, { id: true, dueDate: true })
-    .toArray();
-
-  const overdueIds = tasks
-    .filter(t => t.dueDate && t.dueDate < now)
-    .map(t => t.id);
-
-  if (overdueIds.length > 0) {
-    await tx.updateMany(overdueIds, { set: { status: 'archived' } });
-  }
-});
-```
-
-Firestore
-
-```typescript
-await repo.runTransaction(async (tx) => {
-  // Firestore requires reads before writes in a transaction
-  const page = await tx.findPage(
-    { status: 'in_progress' },
-    { limit: 50, projection: { id: true, dueDate: true } }
-  );
-
-  const now = new Date();
-  const overdueIds = page.items
-    .filter(t => t.dueDate && t.dueDate < now)
-    .map(t => t.id);
-
-  if (overdueIds.length > 0) {
-    await tx.updateMany(overdueIds, { set: { status: 'archived' } });
-  }
-});
-```
-
-## Pagination
-
-- Use `findPage` for cursor-based pagination (stable regardless of depth).
-- MongoDB: ensure compound indexes when using custom `orderBy` (append `_id`).
-- Firestore: always includes `__name__` tiebreaker; cursor must reference an existing doc.
-
-## Tracing and Audit Overview
-
-- Per-repo `traceContext` and per-operation `{ mergeTrace }` are merged; `_op` and `_at` added automatically.
-- Strategies:
-  - `'latest'` — single object
-  - `'bounded'` — array with max size (MongoDB only)
-  - `'unbounded'` — append-only array (MongoDB and Firestore)
-- Patterns:
-  - Change streams (MongoDB) for asynchronous audit pipelines
-  - Embedded audit trails for immediate, self-contained history
-
-## What the Heck is Slire?
-
-Slire is a lightweight, database-agnostic interface that provides common CRUD operations with built-in consistency features, designed to work seamlessly alongside native database access. It currently supports MongoDB and Firestore implementations.
-
-**Consistency features** are patterns that most applications need but typically implement inconsistently: automatic timestamps (createdAt, updatedAt), versioning for optimistic locking, soft-delete functionality, and audit trails. Rather than manually adding these to every operation, Slire applies them automatically while still allowing native database access for complex queries and operations.
-
-Slire emerged from practical production needs moving between ODM‑style convenience and pure native database access across Firestore and MongoDB. Both approaches have pros and cons: ODMs provide convenience but limit functionality, while native access offers full power but requires repetitive boilerplate. Slire occupies a middle ground: more convenience than pure native drivers, but significantly less abstraction than traditional ORMs. It's designed for teams who understand their database technology and want to use it effectively without losing access to advanced features.
-
-For a deeper understanding of the problems this approach solves, see [docs/WHY.md](docs/WHY.md).
-
-## A Quick Glimpse
-
-Slire implements the repository pattern: a collection-like interface for accessing and manipulating domain objects. Each repository is bound to a specific database collection and organizational scope, providing type-safe CRUD operations that reduce boilerplate while working seamlessly alongside native database access for complex operations.
-
-Creating a repository instance:
-
-```typescript
-const expenseRepo = createMongoRepo({
-  collection: mongoClient.db('expenseDb').collection<Expense>('expenses'),
-  mongoClient,
-  scope: { organizationId: 'acme-123' }, // applied to all reads and writes
-});
-
-// better to have a factory enforcing constraints and encapsulating db/collection names
-function createExpenseRepo(client: MongoClient, organizationId: string) {
-  return createMongoRepo({
-    collection: client.db('expenseDb').collection<Expense>('expenses'),
-    mongoClient: client,
-    scope: { organizationId },
-  });
-}
-```
-
-A Slire repository implements a set of basic, DB-agnostic CRUD operations:
-
-```typescript
-const repo = createExpenseRepo(mongoClient, 'acme-123');
-
-const id = await repo.create(expenseFromImport());
-
-await repo.update(id, { set: { totalClaim: 42 }, unset: 'attachments' });
-
-await repo.delete(id);
-
-await repo.getById(id); // undefined
-```
-
-The full list is documented in the [API Reference](#api-reference-core-crud-operations-slire-interface) section.
-
-Here's how [transactions](#runtransaction) work:
-
-```typescript
-await repo.runTransaction(async (tx) => {
-  // tx is a transaction-aware repository instance
-  // read overdue in-progress tasks, then archive them
-  const now = new Date();
-  const tasks = await tx
-    .find({ status: 'in_progress' }, { id: true, dueDate: true })
-    .toArray();
-
-  const overdueIds = tasks
-    .filter((t) => t.dueDate && t.dueDate < now)
-    .map((t) => t.id);
-
-  if (overdueIds.length > 0) {
-    await tx.updateMany(overdueIds, { set: { status: 'archived' } });
-  }
-});
-```
-
-This can be written more verbosely like this (revealing how `runTransaction` is implemented):
 
 ```typescript
 await mongoClient.withSession(async (session) => {
@@ -459,6 +256,56 @@ This is no coincidence as the MongoDB API is considered very clean in that regar
 
 !! consider moving somewhere else
 Finally, if you've been using `DocumentService` for most of your data access, you might wonder what a migration path to Slire would look like. You're probably thinking it's quite an effort since you've injected `DocumentService` instances all over the place and the interfaces aren't compatible. That's correct, and the "Recommended Usage Patterns" section explains why we think that injecting repository instances everywhere isn't a good idea in the first place.
+
+## API Overview
+
+- **CRUD**: `getById`, `getByIds`, `create`, `createMany`, `update`, `updateMany`, `delete`, `deleteMany`
+- **Query**: `find`, `findBySpec`, `findPage`, `findPageBySpec`, `count`, `countBySpec`
+- **Transactions**:
+  - MongoDB: `withSession(session)`, `runTransaction(cb)`
+  - Firestore: `withTransaction(tx)`, `runTransaction(cb)`
+- **Helpers** (advanced/native use):
+  - `collection` (native handle)
+  - `applyConstraints(...)` (adds scope, soft-delete filtering)
+  - `buildUpdateOperation(update, mergeTrace?)` (applies timestamps/version/trace; protects readonly fields)
+
+For in-depth details, see the sections below (MongoDB/Firestore implementations and the full API reference).
+
+## Configuration
+
+Key options (shared unless noted):
+
+- **Identity**
+  - `generateId?: 'server' | (() => string)` — default `'server'` (Mongo ObjectId / Firestore doc id)
+  - `idKey?: keyof T` — default `'id'`
+  - `mirrorId?: boolean` — persist public id in documents (off by default)
+- **Consistency**
+  - `softDelete?: boolean` — enable soft delete
+  - `traceTimestamps?: true | 'server' | (() => Date)` — timestamp source
+  - `timestampKeys?: { createdAt?; updatedAt?; deletedAt? }` — custom keys imply timestamping
+  - `version?: true | keyof T` — versioning field (default `_version`)
+- **Tracing**
+  - `traceKey?: keyof T` — default `_trace`
+  - `traceStrategy?: 'latest' | 'bounded' | 'unbounded'`
+    - Firestore: `'bounded'` not supported (throws)
+  - `traceLimit?: number` — required for `'bounded'`
+
+## Database Differences
+
+### MongoDB
+
+- **Soft delete**: filters on “marker does not exist”; deletes set the marker.
+- **Pagination**: cursor is `_id` (ObjectId string) and `_id` is always a tiebreaker; compound sorts supported with a cursor filter.
+- **Updates**: query-based (`updateMany`); large inputs chunked to respect driver limits.
+- **Tracing**: all strategies supported; server timestamps via `$currentDate` when configured.
+
+### Firestore
+
+- **Soft delete**: documents created with `_deleted: false`, reads filter `_deleted == false`.
+- **Pagination**: cursor is document id; sort requires `__name__` tiebreaker.
+- **Updates**: batched writes; multi-document updates chunked (`IN` limits).
+- **Tracing**: supports `'latest'` and `'unbounded'` (throws on `'bounded'`).
+- **Transactions**: reads must occur before writes; repository methods that read inside must be called in the read phase.
 
 ## API Reference Core CRUD Operations (Slire interface)
 
