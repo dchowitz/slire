@@ -145,6 +145,7 @@ await repo.runTransaction(async (tx) => {
   // read overdue in-progress tasks, then archive them
   const now = new Date();
   const tasks = await tx
+    // note: find currently supports exact equality matches only (no range operators)
     .find({ status: 'in_progress' }, { id: true, dueDate: true })
     .toArray();
 
