@@ -1,6 +1,5 @@
 # Slire
 
-- [Overview](#overview)
 - [Install](#install)
 - [Quickstart](#quickstart)
   - [MongoDB (Quickstart)](#mongodb-quickstart)
@@ -23,9 +22,9 @@
 
 ---
 
-## Overview
+Slire is a minimal, database‑agnostic repository layer that adds the consistency features most teams rewrite over and over — scope, timestamps, versioning, soft delete, and tracing — while keeping native drivers front and center. Use Slire when you want less boilerplate and safer CRUD, and keep using native drivers for anything advanced.
 
-Slire is a minimal, database‑agnostic repository layer that adds the consistency features most teams rewrite over and over — scope, timestamps, versioning, soft delete, and tracing — while keeping native MongoDB/Firestore drivers front and center. Use Slire when you want less boilerplate and safer CRUD, and keep using native drivers for anything advanced.
+Currently implemented for [MongoDB](https://www.mongodb.com/) and [Firestore](https://firebase.google.com/docs/firestore).
 
 - Minimal abstraction over native drivers (no query builders)
 - Managed fields applied automatically and consistently
@@ -347,10 +346,6 @@ This is no coincidence as the MongoDB API is considered very clean in that regar
 
 !! consider moving somewhere else
 Finally, if you've been using `DocumentService` for most of your data access, you might wonder what a migration path to Slire would look like. You're probably thinking it's quite an effort since you've injected `DocumentService` instances all over the place and the interfaces aren't compatible. That's correct, and the "Recommended Usage Patterns" section explains why we think that injecting repository instances everywhere isn't a good idea in the first place.
-
-## Why Slire?
-
-This section moved to [docs/WHY.md](docs/WHY.md) for clarity and brevity in the main README.
 
 ## API Reference Core CRUD Operations (Slire interface)
 
