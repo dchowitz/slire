@@ -19,7 +19,7 @@
 
 ---
 
-Slire is a minimal, database‑agnostic repository layer that adds the consistency features most teams rewrite over and over — scope, timestamps, versioning, soft delete, and tracing — while keeping native drivers front and center. Use Slire when you want less boilerplate and safer CRUD, and keep using native drivers for anything advanced.
+Slire is a Node.js library providing a minimal, database‑agnostic repository layer that adds the consistency features most teams rewrite over and over: scope, timestamps, versioning, soft delete, and tracing — while keeping native drivers front and center. Use Slire when you want less boilerplate and safer CRUD, and keep using native drivers for anything advanced.
 
 - Minimal abstraction over native drivers (no generic query DSL)
 - Managed fields applied automatically and consistently
@@ -44,65 +44,95 @@ yarn add slire
 
 ## Quickstart
 
-A Slire repository is instantiated with a configuration that defines which fields are managed automatically (id, timestamps, version, trace) and which scope to apply. Scope is a fixed filter that enforces tenancy/data partitioning across all operations. For MongoDB, scope is merged into reads and writes; for Firestore, scope is validated on writes and typically enforced by path‑scoped collections. Managed fields are read‑only for updates and validated or ignored on create.
+Slire implements the repository pattern: a collection-like interface for accessing and manipulating domain objects. Each repository is bound to a specific database collection.
 
-MongoDB
+A Slire repository is instantiated with a configuration that defines which fields are managed automatically (id, timestamps, version, trace) and which scope to apply. Scope is a fixed filter that enforces tenancy/data partitioning across all operations.
+
+For MongoDB, scope is merged into reads and writes; for Firestore, scope is validated on writes and typically enforced by path‑scoped collections. Managed fields are read‑only for updates and validated or ignored on create.
+
+For the following examples let's assume a simple collection type representing tasks:
+
+```typescript
+type Task = {
+  id: string;
+  tenantId: string; // scope
+  title: string;
+  status: 'todo' | 'in_progress' | 'done' | 'archived';
+  dueDate?: Date;
+  _createdAt?: Date;
+};
+```
+
+Repository instantiation with MongoDB:
 
 ```typescript
 import { MongoClient } from 'mongodb';
 import { createMongoRepo } from 'slire';
 
-type Expense = { id: string; organizationId: string; total: number; _createdAt?: Date };
-
 const client = new MongoClient(process.env.MONGO_URI!);
-const expenses = client.db('app').collection<Expense>('expenses');
 
-const repo = createMongoRepo<Expense>({
-  collection: expenses,
+const repo = createMongoRepo({
+  collection: client.db('app').collection<Task>('tasks'),
   mongoClient: client,
-  scope: { organizationId: 'acme-123' },
+  scope: { tenantId: 'acme-123' },
   options: { softDelete: true, traceTimestamps: true, version: true },
 });
 ```
 
-Firestore
+Repository instantiation with Firestore:
 
 ```typescript
 import { Firestore } from '@google-cloud/firestore';
 import { createFirestoreRepo } from 'slire';
 
-type User = { id: string; organizationId: string; name: string; _createdAt?: Date };
-
 const db = new Firestore();
-const collection = db.collection('organizations/acme-123/users') as any;
 
-const repo = createFirestoreRepo<User>({
-  collection,
+const repo = createFirestoreRepo({
+  collection: db.collection('tenants/acme-123/tasks'),
   firestore: db,
-  scope: { organizationId: 'acme-123' }, // validated on writes only
+  scope: { tenantId: 'acme-123' }, // validated on writes only
   options: { softDelete: true, traceTimestamps: 'server', version: true },
 });
 ```
 
-Reads support projections (`{ field: true }`) and return a single‑use `QueryStream` you can iterate or convert with `.toArray()`.
+It's recommended to provide a factory for repository instantiation to encapsulate constraints / managed fields and db/collection names. For example in MongoDB:
 
 ```typescript
-// Create
-const id = await repo.create({ total: 10 } as any);
+function createTaskRepo(client: MongoClient, tenantId: string) {
+  return createMongoRepo({
+    collection: client.db('app').collection<Task>('tasks'),
+    mongoClient: client,
+    scope: { organizationId },
+  });
+}
+```
 
-// Read single with projection
+A Slire repository implements a set of basic, DB-agnostic CRUD operations:
+
+```typescript
+const id = await repo.create(taskFromImport());
+
+await repo.update(id, { set: { totalClaim: 42 }, unset: 'attachments' });
+
+await repo.delete(id);
+
+await repo.getById(id); // undefined
+```
+
+All read operations support projections. `find` returns a single‑use `QueryStream` you can iterate or convert with `.toArray()`.
+
+```typescript
 const justId = await repo.getById(id, { id: true }); // -> { id: string } | undefined
 
 // Stream reads (single-use)
-for await (const e of repo.find({})) {
-  // process entity
+for await (const task of repo.find({})) {
+  doSomething(task);
 }
-const list = await repo.find({}).skip(5).take(10).toArray();
 
-// Update and delete
-await repo.update(id, { set: { total: 42 } });
-await repo.delete(id);
+const list = await repo.find({}).skip(5).take(10).toArray();
 ```
+
+The full list is documented in the [API Reference](#api-reference-core-crud-operations-slire-interface) section.
 
 ## API Overview
 
@@ -1546,3 +1576,11 @@ class ExpenseService {
 - Boilerplate code repeated across operations
 - Tight coupling between business logic and audit requirements
 - Higher risk of inconsistent audit practices across the codebase
+
+## FAQ
+
+Why implementations for MongoDB and Firestore?
+
+## Roadmap
+
+PostgreSQL
