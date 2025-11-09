@@ -2,9 +2,6 @@
 
 - [Install](#install)
 - [Quickstart](#quickstart)
-  - [MongoDB (Quickstart)](#mongodb-quickstart)
-  - [Firestore (Quickstart)](#firestore-quickstart)
-- [Core Concepts](#core-concepts)
 - [API Overview](#api-overview)
 - [Configuration](#configuration)
 - [Database Differences](#database-differences)
@@ -47,7 +44,9 @@ yarn add slire
 
 ## Quickstart
 
-### MongoDB (Quickstart)
+A Slire repository is instantiated with a configuration that defines which fields are managed automatically (id, timestamps, version, trace) and which scope to apply. Scope is a fixed filter that enforces tenancy/data partitioning across all operations. For MongoDB, scope is merged into reads and writes; for Firestore, scope is validated on writes and typically enforced by path‑scoped collections. Managed fields are read‑only for updates and validated or ignored on create.
+
+MongoDB
 
 ```typescript
 import { MongoClient } from 'mongodb';
@@ -64,14 +63,9 @@ const repo = createMongoRepo<Expense>({
   scope: { organizationId: 'acme-123' },
   options: { softDelete: true, traceTimestamps: true, version: true },
 });
-
-const id = await repo.create({ total: 10 });
-await repo.update(id, { set: { total: 42 }, unset: [] });
-const found = await repo.getById(id);
-await repo.delete(id);
 ```
 
-### Firestore (Quickstart)
+Firestore
 
 ```typescript
 import { Firestore } from '@google-cloud/firestore';
@@ -88,19 +82,27 @@ const repo = createFirestoreRepo<User>({
   scope: { organizationId: 'acme-123' }, // validated on writes only
   options: { softDelete: true, traceTimestamps: 'server', version: true },
 });
-
-const id = await repo.create({ name: 'Jane' });
-const [users] = await repo.getByIds([id], { id: true, name: true });
-await repo.deleteMany([id]);
 ```
 
-## Core Concepts
+Reads support projections (`{ field: true }`) and return a single‑use `QueryStream` you can iterate or convert with `.toArray()`.
 
-- **Scope**: Object merged into all operations for automatic multi-tenancy (e.g., `{ organizationId }`). Reads and writes are constrained; Firestore reads are path-scoped (scope validated on writes).
-- **Managed fields**: `id`, timestamps, version, trace, and scope fields are readonly for updates; allowed on create for convenience (system fields ignored; scope validated).
-- **UpdateOperation**: `{ set?: Partial<T>; unset?: OptionalPropPath | OptionalPropPath[] }` with support for dot paths and overlap validation.
-- **Projections**: `{ propA: true, propB: true }` narrows types on reads.
-- **QueryStream**: Single-use async iterable with `.toArray()`, `.skip()`, `.take()`, `.paged()`.
+```typescript
+// Create
+const id = await repo.create({ total: 10 } as any);
+
+// Read single with projection
+const justId = await repo.getById(id, { id: true }); // -> { id: string } | undefined
+
+// Stream reads (single-use)
+for await (const e of repo.find({})) {
+  // process entity
+}
+const list = await repo.find({}).skip(5).take(10).toArray();
+
+// Update and delete
+await repo.update(id, { set: { total: 42 } });
+await repo.delete(id);
+```
 
 ## API Overview
 
