@@ -24,14 +24,14 @@
 
 Slire is a minimal, database‑agnostic repository layer that adds the consistency features most teams rewrite over and over — scope, timestamps, versioning, soft delete, and tracing — while keeping native drivers front and center. Use Slire when you want less boilerplate and safer CRUD, and keep using native drivers for anything advanced.
 
-Currently implemented for [MongoDB](https://www.mongodb.com/) and [Firestore](https://firebase.google.com/docs/firestore).
-
-- Minimal abstraction over native drivers (no query builders)
+- Minimal abstraction over native drivers (no generic query DSL)
 - Managed fields applied automatically and consistently
 - Type‑safe CRUD, projections, and streaming queries
 - Helpers for native ops: `applyConstraints`, `buildUpdateOperation`
-- Transactions support for MongoDB and Firestore
+- Transactions support
 - Cursor‑based pagination with stable ordering
+
+Currently implemented for [MongoDB](https://www.mongodb.com/) and [Firestore](https://firebase.google.com/docs/firestore).
 
 Want the full rationale? See [Why Slire?](docs/WHY.md).
 
