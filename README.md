@@ -593,13 +593,25 @@ do {
 
 `count(filter: Partial<T>, options?: { onScopeBreach?: 'zero' | 'error' }): Promise<number>`
 
-Returns the number of entities that match the provided filter criteria. Like `find`, the repository automatically applies scope filtering in addition to the user-provided filter, and soft-deleted entities are automatically excluded from the count if soft delete is enabled. Returns 0 if no matching entities are found.
+Returns the number of entities that match the filter (exact‑equality predicates). Applies scope rules and excludes soft‑deleted entities (when enabled). On scope‑breach, returns `0` by default (`onScopeBreach: 'zero'`) or throws when set to `'error'`. Returns `0` when no matches are found.
+
+Firestore notes:
+- Uses the server‑side count aggregation (`query.count().get()`); documents are not fetched.
+- Path‑scoped collections are expected; scope is not added to read filters.
+- When soft delete is enabled, Slire appends a server‑side filter to exclude soft‑deleted documents.
+- Index requirements: the same composite indexes required for the equivalent `find` query also apply to `count`; Firestore fails with an index error if missing.
+
+MongoDB notes:
+- Uses `countDocuments` with repository constraints (scope and soft‑delete filter).
+- Performs best with indexes on filter fields; missing/insufficient indexes may cause collection scans and higher load.
 
 ### countBySpec
 
 `countBySpec<S extends Specification<T>>(spec: S, options?: { onScopeBreach?: 'zero' | 'error' }): Promise<number>`
 
-Returns the number of entities that match the provided specification. Like `count`, the repository automatically applies scope filtering and soft delete exclusion. This method works with the same specification objects used by `findBySpec`, enabling consistent query logic across find and count operations. Returns 0 if no matching entities are found.
+Counts entities that match a specification (spec resolves to an exact‑equality filter via `toFilter()`). Applies scope rules and excludes soft‑deleted entities (when enabled). On scope‑breach, returns `0` by default (`onScopeBreach: 'zero'`) or throws when set to `'error'`. Returns `0` when no matches are found. Uses the same specification objects as `findBySpec`, ensuring consistent query logic across find and count.
+
+See database‑specific notes under [count](#count).
 
 ---
 content below is temporary and needs restructure...
