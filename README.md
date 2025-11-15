@@ -393,11 +393,13 @@ Firestore notes:
 - When soft delete is enabled, Slire appends a server‑side filter.
 - Projection is applied server‑side for non‑`idKey` fields; `idKey` is derived from `doc.id`.
 - If `orderBy` doesn’t include an id field, `__name__` is appended as a tiebreaker for deterministic ordering.
+- index requirements: composite indexes are required for queries that combine multiple equality filters and/or `orderBy` across fields. Firestore will fail such queries with an error that links to index creation. Create the composite index on the filtered and sorted fields in the order Firestore specifies.
 
 MongoDB notes:
 - Scope is merged into filters; with soft delete enabled, soft‑deleted documents are excluded.
 - Public `idKey` maps to `_id` in filters/projections; string ids are converted to `ObjectId` when using server‑generated ids.
 - If `orderBy` doesn’t include `_id`, `_id` is appended as a tiebreaker for deterministic ordering.
+- index recommendations: add indexes that cover your equality filters and sort keys. For multi‑key sorting, prefer a compound index with the sort keys and `_id` last for a stable tiebreaker. Missing/insufficient indexes can cause collection scans and increased load.
 
 Examples:
 
@@ -505,6 +507,7 @@ Firestore notes:
 - Projection is applied server‑side for non‑`idKey` fields; `idKey` is derived from `doc.id`.
 - If `orderBy` doesn’t include an id field, `__name__` is appended as a tiebreaker for deterministic ordering.
 - Cursor format is the document id; invalid/unknown cursors result in an error.
+- index requirements: `findPage` queries that combine filters and `orderBy` require composite indexes. Firestore returns an error with a direct link to create the needed index. Ensure the index includes the filtered fields and the ordered fields in the correct order.
 
 MongoDB notes:
 - Scope is merged into filters; soft‑deleted documents are excluded when enabled.
