@@ -288,7 +288,7 @@ Firestore notes:
 - Writes are chunked to Firestore batch limits; each batch is atomic.
 
 MongoDB notes:
-- Uses bulk upsert with `$setOnInsert` to avoid overwriting existing documents.
+- Uses `bulkWrite` (upsert with `$setOnInsert`) for batched inserts; `insertMany` is not sufficient for Slire’s constraints and metadata handling.
 - Writes are chunked to respect driver limits.
 
 Error handling and partial writes: IDs are prepared up front. The operation runs in chunks to respect backend limits. If a chunk fails:
