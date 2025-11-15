@@ -457,7 +457,32 @@ await after10.toArray(); // also works
 
 `findBySpec<S extends Specification<T>, P extends Projection<T>>(spec: S, options: FindOptions & { projection: P }): QueryStream<Projected<T, P>>`
 
-Queries entities using a specification object that encapsulates filter criteria and business rules. The repository automatically applies scope filtering and soft delete exclusion just like `find`. Specifications provide composable, reusable query logic that can be combined using `combineSpecs`. The `FindOptions` parameter supports the same options as `find` including `orderBy` for sorting. See [Query Abstraction Patterns](#query-abstraction-patterns) for detailed examples and patterns.
+Queries entities using a specification object that encapsulates filter criteria and business rules. Returns a single‑use `QueryStream`. Specifications resolve to equality filters via `toFilter()`. The repository applies scope rules and excludes soft‑deleted entities (when enabled). Supports the same options as `find` (e.g., `orderBy`, projections). Compose multiple specifications with `combineSpecs`.
+
+See database‑specific notes under [find](#find).
+
+Examples:
+
+```typescript
+// task specs
+const inProgress: Specification<Task> = {
+  toFilter: () => ({ status: 'in_progress' }),
+  describe: 'in-progress tasks',
+};
+
+const withAssignee = (userId: string): Specification<Task> => ({
+  toFilter: () => ({ 'metadata.assigneeId': userId }),
+  describe: `assigned to ${userId}`,
+});
+
+// Combine and project
+const tasks = await repo
+  .findBySpec(combineSpecs(inProgress, withAssignee('u_123')), {
+    orderBy: { 'metadata.priority': 'desc', title: 'asc' },
+    projection: { id: true, title: true, status: true },
+  })
+  .toArray();
+```
 
 ### findPage
 
