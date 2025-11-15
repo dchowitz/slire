@@ -351,15 +351,29 @@ await repo.updateMany(
 
 `delete(id: string): Promise<void>`
 
-Deletes a single entity identified by its ID. The repository applies scope filtering to ensure only entities within the current scope can be deleted. If the repository is configured with soft delete, the entity is marked with a deletion flag (default is `_deleted`) rather than being physically removed. If timestamping is also enabled, a `deletedAt` timestamp is added as well. If hard delete is configured, the entity is permanently removed from the database. No error is thrown if the entity doesn't exist or doesn't match the scope.
+Deletes a single entity by ID. Applies scope. With soft delete enabled, marks the entity as deleted (default `_deleted: true`) and applies timestamps/version/trace if configured; with hard delete, removes it physically. No error is thrown if the entity doesn’t exist or is out of scope. Soft‑deleted entities are excluded from subsequent reads.
+
+Firestore notes:
+- With soft delete, a read happens first to ensure the document is active (`_deleted == false`), then the delete mark is applied. In transactions, call during the read phase (before any writes).
+- With hard delete, the document is deleted by path (no pre‑read). Path‑scoped collections are assumed; scope is validated on writes, not added to read filters.
 
 ### deleteMany
 
 `deleteMany(ids: string[]): Promise<void>`
 
-Bulk version of `delete` that removes multiple entities identified by their IDs. All entities are subject to the same scope filtering and soft/hard delete behavior as the single `delete` function. The operation succeeds even if some of the provided IDs don't exist or don't match the scope - only the valid, in-scope entities will be deleted.
+Removes multiple entities by ID. Applies scope. With soft delete enabled, marks entities as deleted (default `_deleted: true`) and applies timestamps/version/trace if configured; with hard delete, removes them physically. Succeeds even if some IDs don’t exist or are out of scope (only active, in‑scope entities are affected).
 
-For large inputs, the operation may run in chunks and is not atomic across chunks. If you need all-or-nothing behavior, run the deletion inside a transaction with `runTransaction`.
+For large inputs, implementations may process deletions in chunks to respect native driver/datastore limits; chunked execution is not atomic across chunks. If you need all‑or‑nothing behavior across many IDs, run the deletion inside a transaction with `runTransaction`. Be mindful of transaction size limits (atomicity is per transaction; very large deletes may need multiple transactions).
+
+Firestore notes:
+- Soft delete: performs a read (by documentId IN) to select only active documents (`_deleted == false`), then applies the delete mark. In transactions, call during the read phase (before any writes).
+- Hard delete: deletes documents by path (no pre‑read). Path‑scoped collections are assumed; scope is validated on writes, not added to read filters.
+- Respects IN and batch limits; executes multiple batches when needed. Not atomic across batches unless the transaction covers them.
+
+MongoDB notes:
+- Soft delete: uses a single `updateMany` per chunk with repository constraints applied.
+- Hard delete: uses `deleteMany` per chunk.
+- Processes IDs in chunks to respect `$in` limits; not atomic across chunks unless wrapped in a transaction.
 
 ### find
 
