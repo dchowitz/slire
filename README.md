@@ -561,26 +561,32 @@ do {
 
 Provides cursor-based pagination using specification objects for query criteria. Works identically to `findPage` but accepts a `Specification<T>` instead of a filter object, enabling reusable, composable query logic. See [Query Abstraction Patterns](#query-abstraction-patterns) for detailed examples of the specification pattern.
 
-**Usage Example:**
+See database‑specific notes under [findPage](#findpage).
+
+Examples:
 
 ```typescript
-const activeUsersSpec: Specification<User> = {
-  toFilter: () => ({ isActive: true }),
-  describe: 'active users',
+const inProgress: Specification<Task> = {
+  toFilter: () => ({ status: 'in_progress' }),
+  describe: 'in-progress tasks',
 };
 
-// First page
-const page1 = await repo.findPageBySpec(activeUsersSpec, {
+const pageParams = {
   limit: 20,
-  orderBy: { createdAt: 'desc' },
-});
+  orderBy: { _createdAt: 'desc' },
+  projection: { id: true, title: true },
+};
 
-// Subsequent pages
-const page2 = await repo.findPageBySpec(activeUsersSpec, {
-  limit: 20,
-  orderBy: { createdAt: 'desc' },
-  cursor: page1.nextCursor,
-});
+let page = await repo.findPageBySpec(inProgress, pageParams);
+
+do {
+  doSmth(page.items);
+  if (!page.nextCursor) break;
+  page = await repo.findPageBySpec(inProgress, {
+    ...pageParams,
+    cursor: page.nextCursor,
+  });
+} while (true);
 ```
 
 ### count
