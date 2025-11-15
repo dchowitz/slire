@@ -134,18 +134,18 @@ export type Specification<T> = {
 };
 
 // Thrown by createMany when some but not all documents were inserted.
-// Contains the list of successfully inserted public ids and the ones that failed.
+// Contains the list of successfully inserted public ids and the indices that failed.
 export class CreateManyPartialFailure extends Error {
   insertedIds: string[];
-  failedIds: string[];
-  constructor(params: { insertedIds: string[]; failedIds: string[] }) {
-    const total = params.insertedIds.length + params.failedIds.length;
+  failedIndices: number[];
+  constructor(params: { insertedIds: string[]; failedIndices: number[] }) {
+    const total = params.insertedIds.length + params.failedIndices.length;
     super(
       `createMany partially inserted ${params.insertedIds.length}/${total} entities`,
     );
     this.name = 'CreateManyPartialFailure';
     this.insertedIds = params.insertedIds;
-    this.failedIds = params.failedIds;
+    this.failedIndices = params.failedIndices;
   }
 }
 

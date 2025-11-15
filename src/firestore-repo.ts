@@ -500,10 +500,13 @@ export function createFirestoreRepo<
         } catch {
           // Firestore batch failed - entire batch fails atomically
           // All remaining operations (this batch + subsequent batches) are considered failed
-          const failedIds = preparedPublicIds.slice(offset);
+          const failedIndices = Array.from(
+            { length: preparedDocs.length - offset },
+            (_, i) => offset + i,
+          );
           throw new CreateManyPartialFailure({
             insertedIds: insertedSoFar,
-            failedIds: failedIds,
+            failedIndices,
           });
         }
       }

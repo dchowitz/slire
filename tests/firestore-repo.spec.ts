@@ -451,7 +451,7 @@ describe('createFirestoreRepo', function () {
         if (e instanceof CreateManyPartialFailure) {
           // Firestore behavior: entire batch fails atomically, so no inserts succeed
           expect(e.insertedIds).toHaveLength(0);
-          expect(e.failedIds).toHaveLength(3);
+          expect(e.failedIndices).toEqual([0, 1, 2]);
           // Firestore should contain no documents (entire batch failed)
           const snapshot = await rawTestCollection().get();
           expect(snapshot.size).toBe(0);
@@ -490,8 +490,10 @@ describe('createFirestoreRepo', function () {
         if (e instanceof CreateManyPartialFailure) {
           // Firestore behavior: first 900 succeed (batches 1-3), third batch fails entirely
           expect(e.insertedIds).toHaveLength(900);
-          // All 105 entities in the fourth batch fail (entire batch fails atomically)
-          expect(e.failedIds).toHaveLength(105);
+          // All 105 entities in the fourth batch fail (entire batch fails atomically): indices 900..1004
+          expect(e.failedIndices).toEqual(
+            Array.from({ length: 105 }, (_, i) => 900 + i),
+          );
           const snapshot = await rawTestCollection().get();
           expect(snapshot.size).toBe(900);
         } else {

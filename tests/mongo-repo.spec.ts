@@ -429,7 +429,7 @@ describe('createtMongoRepo', function () {
       } catch (e: any) {
         if (e instanceof CreateManyPartialFailure) {
           expect(e.insertedIds).toHaveLength(1);
-          expect(e.failedIds).toHaveLength(2);
+          expect(e.failedIndices).toEqual([1, 2]);
           // DB should contain exactly the inserted documents
           const count = await rawTestCollection().countDocuments({});
           expect(count).toBe(1);
@@ -467,8 +467,8 @@ describe('createtMongoRepo', function () {
         if (e instanceof CreateManyPartialFailure) {
           // first 1000 + first of second batch were inserted
           expect(e.insertedIds).toHaveLength(1001);
-          // remaining 4 in second batch failed
-          expect(e.failedIds).toHaveLength(4);
+          // remaining 4 in second batch failed: indices 1001..1004
+          expect(e.failedIndices).toEqual([1001, 1002, 1003, 1004]);
           const count = await rawTestCollection().countDocuments({});
           expect(count).toBe(1001);
         } else {

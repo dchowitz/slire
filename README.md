@@ -292,8 +292,8 @@ MongoDB notes:
 - Writes are chunked to respect driver limits.
 
 Error handling and partial writes: IDs are prepared up front. The operation runs in chunks to respect backend limits. If a chunk fails:
-- MongoDB: the driver may have inserted a subset of the current chunk; the function throws `CreateManyPartialFailure` with `insertedIds` including prior chunks plus the inserted subset of the failing chunk, and `failedIds` including the remaining items of the failing chunk plus all subsequent chunks.
-- Firestore: the entire failing batch is rolled back; the function throws `CreateManyPartialFailure` with `insertedIds` from prior batches only and `failedIds` for the failed batch and all subsequent batches.
+- MongoDB: the driver may have inserted a subset of the current chunk; the function throws `CreateManyPartialFailure` with `insertedIds` including prior chunks plus the inserted subset of the failing chunk, and `failedIndices` containing the 0‑based input indices of the remaining items in the failing chunk plus all subsequent chunks.
+- Firestore: the entire failing batch is rolled back; the function throws `CreateManyPartialFailure` with `insertedIds` from prior batches only and `failedIndices` for the failed batch and all subsequent batches (0‑based input indices).
 
 If you need atomicity across the whole input, wrap the call in a transaction via `runTransaction`.
 

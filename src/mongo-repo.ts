@@ -512,22 +512,29 @@ export function createMongoRepo<
           >;
 
           // split current batch into inserted/failed
-          const failedInCurrent: string[] = [];
+          const failedIndicesInCurrent: number[] = [];
           for (let i = 0; i < batch.length; i++) {
             const id = preparedPublicIds[offset + i];
             if (Object.prototype.hasOwnProperty.call(upserted, String(i))) {
               insertedSoFar.push(id);
             } else {
-              failedInCurrent.push(id);
+              failedIndicesInCurrent.push(offset + i);
             }
           }
 
           // all subsequent batches are skipped
-          const skipped = preparedPublicIds.slice(offset + batch.length);
+          const skippedStart = offset + batch.length;
+          const skippedIndices =
+            skippedStart < preparedDocs.length
+              ? Array.from(
+                  { length: preparedDocs.length - skippedStart },
+                  (_, k) => skippedStart + k,
+                )
+              : [];
 
           throw new CreateManyPartialFailure({
             insertedIds: insertedSoFar,
-            failedIds: [...failedInCurrent, ...skipped],
+            failedIndices: [...failedIndicesInCurrent, ...skippedIndices],
           });
         }
 
