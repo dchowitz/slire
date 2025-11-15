@@ -381,30 +381,41 @@ MongoDB notes:
 
 `find<P extends Projection<T>>(filter: Partial<T>, options: FindOptions & { projection: P }): QueryStream<Projected<T, P>>`
 
-Queries entities and returns a streaming result that provides both array and iterator access. The filter uses a subset of the entity properties to match against. The repository automatically applies scope filtering in addition to the user-provided filter. If the filter breaches the configured scope, behavior is controlled by `onScopeBreach` (default `'empty'` → return empty stream; `'error'` → throw). If soft delete is enabled, soft-deleted entities are automatically excluded from results.
+Queries entities and returns a single‑use `QueryStream` (supports async iteration and `.toArray()`). Filters support exact equality on entity properties (no range operators). The repository applies scope rules and excludes soft‑deleted entities (when enabled). With projections, only the requested fields are returned and the result type reflects the projection.
 
 The `FindOptions` parameter supports:
 
 - `onScopeBreach?: 'empty' | 'error'` - Handle scope breaches
 - `orderBy?: Record<string, 1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending'>` - Sort results (dot notation supported for nested properties)
 
-**Usage Examples:**
+Firestore notes:
+- Path‑scoped collections are expected; scope is not added to read filters (it’s enforced by the collection path).
+- When soft delete is enabled, Slire appends a server‑side filter.
+- Projection is applied server‑side for non‑`idKey` fields; `idKey` is derived from `doc.id`.
+- If `orderBy` doesn’t include an id field, `__name__` is appended as a tiebreaker for deterministic ordering.
+
+MongoDB notes:
+- Scope is merged into filters; with soft delete enabled, soft‑deleted documents are excluded.
+- Public `idKey` maps to `_id` in filters/projections; string ids are converted to `ObjectId` when using server‑generated ids.
+- If `orderBy` doesn’t include `_id`, `_id` is appended as a tiebreaker for deterministic ordering.
+
+Examples:
 
 ```typescript
-// Stream processing
-for await (const user of repo.find({ status: 'active' })) {
-  console.log(user.name);
+// stream processing
+for await (const task of repo.find({ status: 'in_progress' })) {
+  console.log(task.title);
 }
 
-// Convert to array
-const users = await repo.find({ status: 'active' }).toArray();
+// convert to array
+const tasks = await repo.find({ status: 'todo' }).toArray();
 
-// Chain operations
-const result = await repo.find({ status: 'active' }).skip(10).take(5).toArray();
+// chain operations
+const nextTasks = await repo.find({ status: 'todo' }).skip(10).take(5).toArray();
 
-// With ordering (supports dot notation for nested fields)
-const orderedUsers = await repo
-  .find({}, { orderBy: { name: 'asc', 'profile.age': 'desc' } })
+// with ordering (dot paths supported)
+const orderedTasks = await repo
+  .find({}, { orderBy: { 'metadata.priority': 'desc', title: 'asc' } })
   .toArray();
 ```
 
@@ -415,29 +426,29 @@ QueryStream instances are designed for single consumption. Once you start iterat
 ```typescript
 const stream = repo.find({ status: 'active' });
 
-// First consumption - works fine
+// first consumption - works fine
 const results1 = await stream.toArray();
 
-// Second consumption - throws error
+// second consumption - throws error
 const results2 = await stream.toArray(); // Error: QueryStream has already been consumed
 
-// Chaining after consumption - also throws error
+// chaining after consumption - also throws error
 const limited = stream.take(10); // Error: Cannot chain operations on already-consumed QueryStream
 ```
 
 To use the same query multiple times, call `find()` again to get a fresh stream. Chaining operations (like `take()`, `skip()`, `paged()`) is allowed before consumption starts, and each derived stream is independent:
 
 ```typescript
-// Valid: chain before consumption
+// valid: chain before consumption
 const stream = repo.find({ status: 'active' });
 const result = await stream.skip(10).take(5).toArray(); // Works fine
 
-// Valid: multiple derived streams from same base (before base is consumed)
+// valid: multiple derived streams from same base (before base is consumed)
 const base = repo.find({});
 const first10 = base.take(10);
 const after10 = base.skip(10);
-await first10.toArray(); // Works
-await after10.toArray(); // Also works
+await first10.toArray(); // works
+await after10.toArray(); // also works
 ```
 
 ### findBySpec
