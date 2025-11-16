@@ -741,10 +741,16 @@ const raw = await repo.collection.findOne({ _id: new ObjectId(id) });
 
 ### softDelete
 
-Enables soft deletion (`/_deleted` marker) and automatically excludes soft‑deleted documents from reads and counts. Updates only affect active documents.
+Accepts `boolean` (default `false`). When enabled, the repository manages a `_deleted` marker instead of physically removing documents. Read operations (`getById`, `find`, `findPage`, `count`) automatically exclude soft‑deleted documents. Update operations only affect active documents. Delete operations set the marker (and apply `deletedAt` and version increments when timestamping/versioning is configured). `getById` returns `undefined` for soft‑deleted documents.
 
-MongoDB: “active” means `_deleted` is absent; deletes set `_deleted: true`.  
-Firestore: new documents are created with `_deleted: false`; queries append `where('_deleted', '==', false)`.
+MongoDB notes:
+- "Active" means the `_deleted` field does not exist; delete operations set `_deleted: true`.
+- Repository filters use "field does not exist" for activity checks; hard deletes are still possible via the native collection if you need to purge data.
+
+Firestore notes:
+- New documents are created with `_deleted: false`; queries append `where('_deleted', '==', false)` to exclude deleted documents.
+- Rationale: Firestore does not support querying for “field does not exist”; a boolean marker enables server‑side filtering (and counting) without fetching documents or doing client‑side post‑processing.
+- Delete operations set `_deleted: true`. In transactions, remember Firestore’s read‑before‑write rule for methods that perform an internal read.
 
 ### traceTimestamps
 
