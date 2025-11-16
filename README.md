@@ -704,11 +704,40 @@ const repo = createMongoRepo({
 
 ### idKey
 
-Sets which property on the entity exposes the datastore id on read (default `'id'`). This value is computed from `_id` (MongoDB) or `doc.id` (Firestore). It is not written to the document unless you enable [mirrorId](#mirrorid).
+Accepts a property name of your entity (default `'id'`). This property exposes the datastore id on read (regardless of whether ids are server‑generated or provided by a custom generator) and is readonly for updates. The value is not stored in the document unless you enable [mirrorId](#mirrorid).
+
+MongoDB notes:
+- Filters using `idKey` are translated to `_id`; when using `'server'` ids, strings are converted to `ObjectId` automatically.
+- Projections using `idKey` are translated to `_id` internally and returned as `idKey` on the entity.
+- Ordering using `orderBy` translates `idKey` to `_id` and always appends `_id` as a tiebreaker if needed.
+
+Firestore notes:
+- `idKey` reflects `doc.id` (the document path id).
+- Filters using `idKey` are translated to `FieldPath.documentId() == ...`.
+- Projections do not fetch a stored `idKey` (it isn’t stored by default); the value is derived from `doc.id` and included in the result when requested in the projection.
 
 ### mirrorId
 
-When `true` (default `false`), the repository also writes the public id into the document under `idKey`. This can be useful when you want to query by `idKey` as a normal field using the native driver.
+Accepts `boolean` (default `false`). When `true`, the repository also persists the public id under `idKey` in addition to the datastore id. Reads are unaffected (entities always expose `idKey`); `idKey` remains readonly for updates regardless of this setting.
+
+MongoDB notes:
+- Persists a duplicate id field alongside `_id`. If you plan to query by `idKey`, consider adding an index on that field.
+
+Firestore notes:
+- Persists `idKey` as a normal document field; `doc.id` remains the primary identifier.
+- Queries on `idKey` may require a composite index depending on other filters/sorts.
+
+Example:
+```ts
+const repo = createMongoRepo({
+  collection,
+  mongoClient,
+  options: { mirrorId: true },
+});
+const id = await repo.create(createTask());
+const raw = await repo.collection.findOne({ _id: new ObjectId(id) });
+// raw contains both _id and id (when idKey is the default 'id')
+``` 
 
 ### softDelete
 
