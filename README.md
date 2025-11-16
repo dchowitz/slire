@@ -849,6 +849,8 @@ const optimisticUpdate = async (
 };
 ```
 
+A MongoDB-specific helper (for example, `optimisticUpdateFilter`) is under consideration for a future version to simplify this pattern.
+
 ### traceKey
 
 Sets the field used to store trace data written on each write (default `_trace`). The default field is hidden on reads unless you explicitly model it in the entity type.
