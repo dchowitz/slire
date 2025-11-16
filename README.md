@@ -795,14 +795,15 @@ await repo.delete(id);                               // _updatedAt == _deletedAt
 ```
 
 ### timestampKeys
-
-Overrides the default timestamp field names (`_createdAt`, `_updatedAt`, `_deletedAt`). Supplying this option implies timestamping is enabled (equivalent to `traceTimestamps: true`). Provided keys become repo‑managed (readonly); unspecified keys keep defaults.
+Renames timestamp fields and accepts a partial object `{ createdAt?, updatedAt?, deletedAt? }`. Providing `timestampKeys` enables timestamping (equivalent to setting `traceTimestamps: true`). Any unspecified keys fall back to the defaults `_createdAt`, `_updatedAt`, and `_deletedAt`. The `deletedAt` key is only used when [softDelete](#softdelete) is enabled. These fields are repository‑managed and cannot be set, updated, or unset via updates. By default, underscore‑prefixed fields are hidden on reads, while custom names are returned as normal properties. Custom timestamp keys must refer to entity properties of type `Date`.
 
 Example:
 ```ts
-const repo = createMongoRepo<Task>({
+const repo = createMongoRepo({
   collection, mongoClient,
-  options: { timestampKeys: { createdAt: 'createdAt', updatedAt: 'updatedAt' } }
+  options: {
+    timestampKeys: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
+  },
 });
 ```
 
