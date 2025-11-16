@@ -681,17 +681,26 @@ await repo.update(taskId, {
 
 ### generateId
 
-Controls how the datastore identifier is created. The default `'server'` uses the driver’s native id (MongoDB `ObjectId`, Firestore `collection.doc().id`). Supplying a function switches to a client‑defined string id, which is written as the datastore id.
+Controls how the datastore identifier is created. Accepts `'server'` or a function `() => string`. With `'server'`, id allocation is delegated to the datastore’s native mechanism. With a function, the returned string is used as the datastore id. The custom generator must produce unique strings; collisions will fail the write (and may surface as partial‑failure errors in batched creates).
 
-Firestore: the generated value becomes `doc.id`.  
-MongoDB: the generated value is stored directly in `_id` (no `ObjectId` conversion).
+MongoDB notes:
+- `'server'` allocates `ObjectId`s client‑side for creates and `createMany`, ensuring stable ids upfront (useful for ordered return values and partial‑failure reporting).
+- When a custom generator is used, its return value is stored directly in `_id` as a string (no `ObjectId` conversion). Avoid mixing id types within the same collection.
+
+Firestore notes:
+- `'server'` uses `collection.doc().id` to allocate ids client‑side before writes; this keeps `createMany` stable and predictable.
+- A custom generator must return a string; that value becomes the document id (`doc.id`) and participates in pagination cursors.
+
+Uniqueness and safety:
+- Your custom generator must produce unique values in your scope; duplicates will fail on insert/upsert and may trigger partial‑failure errors in batch creates.
+- Choose an id format that matches your operational needs (e.g., sortable or opaque). For MongoDB, switching away from `ObjectId` removes its time‑ordering characteristics.
 
 Example:
 ```ts
 const repo = createMongoRepo<Task>({
   collection,
   mongoClient,
-  options: { generateId: () => `task_${crypto.randomUUID()}` },
+  options: { generateId: () => crypto.randomUUID() },
 });
 ```
 
