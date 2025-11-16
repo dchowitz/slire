@@ -684,20 +684,18 @@ await repo.update(taskId, {
 Controls how the datastore identifier is created. Accepts `'server'` or a function `() => string`. With `'server'`, id allocation is delegated to the datastore’s native mechanism. With a function, the returned string is used as the datastore id. The custom generator must produce unique strings; collisions will fail the write (and may surface as partial‑failure errors in batched creates).
 
 MongoDB notes:
-- `'server'` allocates `ObjectId`s client‑side for creates and `createMany`, ensuring stable ids upfront (useful for ordered return values and partial‑failure reporting).
+- `'server'` allocates `ObjectId`s client‑side for creates and `createMany`.
 - When a custom generator is used, its return value is stored directly in `_id` as a string (no `ObjectId` conversion). Avoid mixing id types within the same collection.
+ - `ObjectId` embeds time information and is roughly ordered; switching to custom string ids removes this characteristic.
 
 Firestore notes:
-- `'server'` uses `collection.doc().id` to allocate ids client‑side before writes; this keeps `createMany` stable and predictable.
-- A custom generator must return a string; that value becomes the document id (`doc.id`) and participates in pagination cursors.
-
-Uniqueness and safety:
-- Your custom generator must produce unique values in your scope; duplicates will fail on insert/upsert and may trigger partial‑failure errors in batch creates.
-- Choose an id format that matches your operational needs (e.g., sortable or opaque). For MongoDB, switching away from `ObjectId` removes its time‑ordering characteristics.
+- `'server'` uses `collection.doc().id` to allocate ids client‑side before writes.
+- A custom generator must return a string; that value becomes the document id (`doc.id`).
+ - Uniqueness is enforced within the target collection path; with path‑scoped collections this effectively means uniqueness per scope (e.g., per tenant collection).
 
 Example:
 ```ts
-const repo = createMongoRepo<Task>({
+const repo = createMongoRepo({
   collection,
   mongoClient,
   options: { generateId: () => crypto.randomUUID() },
