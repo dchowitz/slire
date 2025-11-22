@@ -8,7 +8,6 @@
 - [Firestore Implementation](#firestore-implementation)
 - [Usage Patterns](#usage-patterns)
 - [FAQ](#faq)
-- [Roadmap](#roadmap)
 - [License](#license)
 
 ---
@@ -1315,19 +1314,32 @@ Follow the database‑specific notes above: index equality filters and sort keys
 
 ## FAQ
 
-The name, where does it come from? slim repo -> slire, pronounce it like
+### What does "Slire" mean?
 
-Why implementations for MongoDB and Firestore?
+Slire is a combination of "slim" and "repo".
 
-remarks about other features...
+### Why yet another data abstraction?
+
+### When to use Slire?
+
+### Is Slire production-ready?
+
+### What is the release cadence and roadmap?
+
+### Can I mix it with an ORM/ODM?
+
+### Why implementations for MongoDB and Firestore?
+
+### How to add a new backend?
+
+
+
 
 contribution: how can I express that this is for now a solo project?
 
 what's the roadmap? which features/implementations to expect?
 
 PostgreSQL, DocumentDB
-
-better merge into FAQ?
 
 ## License
 
