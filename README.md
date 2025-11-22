@@ -13,12 +13,12 @@
 
 ---
 
-Slire is a Node.js library providing a minimal, database‑agnostic repository layer that adds the consistency features most teams rewrite over and over: scope, timestamps, versioning, soft delete, and tracing — while keeping native drivers front and center. Use Slire when you want less boilerplate and safer CRUD, and keep using native drivers for anything advanced.
+Slire (/slaɪr/) is a Node.js library providing a minimal, database‑agnostic repository layer that adds the consistency features most teams rewrite over and over: scope, timestamps, versioning, soft delete, and tracing — while keeping native drivers front and center. Use Slire when you want less boilerplate and safer CRUD, and keep using native drivers for anything advanced.
 
 - Minimal abstraction over native drivers (no generic query DSL)
 - Managed fields applied automatically and consistently
 - Type‑safe CRUD, projections, and streaming queries
-- Helpers for native ops: `applyConstraints`, `buildUpdateOperation`
+- Helpers for native ops
 - Transactions support
 - Cursor‑based pagination with stable ordering
 
