@@ -213,11 +213,6 @@ export async function archiveOverdueInProgressTasks({
 
 This keeps database and collection details encapsulated by your factory while letting you use the full power of the native driver. You still benefit from consistent scope enforcement and managed fields without rewriting that logic.
 
-
-
-
-
-
 ## API
 
 - CRUD
@@ -903,6 +898,11 @@ The maximum number of trace entries to keep when `traceStrategy` is `bounded`. I
 
 Sets the field used to store trace data written on each write (default `_trace`). The default field is hidden on reads unless you explicitly model it in the entity type.
 
+
+
+
+
+
 ---
 content below is temporary and needs restructure...
 
@@ -917,160 +917,6 @@ The MongoDB implementation provides additional functionality beyond the core Sli
 `createMongoRepo({ collection, mongoClient, scope?, traceContext?, options? }): MongoRepo<T, Scope, Entity>`
 
 Factory function that creates a MongoDB repository instance implementing the Slire interface. Takes a MongoDB collection, client, optional scope for filtering, optional trace context for audit logging, and configuration options for consistency features like timestamps, versioning, soft delete, and tracing. The function uses TypeScript generics to ensure type safety across all repository operations. The returned repository instance provides both the DB-agnostic Slire interface and additional MongoDB-specific helpers (described in the following sections) for advanced operations.
-
-#### Scope
-
-The `scope` parameter defines filtering criteria that are automatically applied to all repository operations. For example, passing `{ organizationId: 'acme-123' }` ensures that all reads and deletes only affect entities belonging to that organization. The scope is merged with user-provided filters and becomes part of every database operation, providing automatic multi-tenancy or data partitioning without requiring explicit filtering in each method call.
-
-**Scope Property Handling by Operation:**
-
-Scope fields are treated as managed fields and are automatically controlled by the repository:
-
-- **Create/Upsert**: Scope properties can be included in entities for convenience but are validated - the operation fails if provided scope values don't match the repository's configured scope. The repository always applies its own configured scope values regardless of input.
-- **Updates**: Scope properties are excluded from `UpdateInput` type and cannot be modified (compile-time and runtime protection)
-- **Reads/Deletes**: Automatically filtered by scope values
-
-```typescript
-const repo = createMongoRepo({
-  collection: userCollection,
-  mongoClient,
-  scope: { organizationId: 'acme-123', isActive: true },
-});
-
-// ✅ Create: scope properties allowed and validated
-await repo.create({
-  name: 'John Doe',
-  organizationId: 'acme-123', // matches scope ✓
-  isActive: true, // matches scope ✓
-});
-
-// ❌ Create: scope validation fails
-await repo.create({
-  name: 'Jane Doe',
-  organizationId: 'different', // doesn't match scope - throws error
-  isActive: true,
-});
-
-// ✅ Update: scope properties excluded from updates
-await repo.update(userId, {
-  set: { name: 'Updated Name' }, // OK - non-scope property
-});
-
-// ❌ Update: scope properties cannot be updated (compile-time error)
-await repo.update(userId, {
-  set: { organizationId: 'new-org' }, // TypeScript error + runtime error
-});
-```
-
-#### Trace Context
-
-The `traceContext` parameter enables automatic audit trail functionality by attaching trace information to all write operations. When provided, the repository automatically embeds this context into documents during create, update, and soft delete operations, providing a foundation for operational debugging and audit logs.
-
-The trace context is completely flexible - define whatever fields are meaningful for your debugging and audit needs:
-
-```typescript
-// Basic trace context
-const repo = createMongoRepo({
-  collection: expenseCollection,
-  mongoClient,
-  traceContext: { userId: 'john-doe', requestId: 'req-abc-123' },
-});
-
-await repo.create(expense);
-// Document includes: { ..., _trace: { userId: 'john-doe', requestId: 'req-abc-123', _op: 'create', _at: Date } }
-```
-
-**Operation-Level Trace Merging:**
-
-All write operations support merging additional trace context via the `mergeTrace` option. Per-operation tracing works even if no base `traceContext` was provided at repository creation time. In that case, the operation’s `mergeTrace` alone enables tracing for that write.
-
-```typescript
-await repo.update(
-  expenseId,
-  { set: { status: 'approved' } },
-  { mergeTrace: { operation: 'approve-expense', approver: 'jane-doe' } }
-);
-// Results in (with base traceContext):
-// { userId: 'john-doe', requestId: 'req-abc-123', operation: 'approve-expense', approver: 'jane-doe', _op: 'update', _at: Date }
-
-// Works without base traceContext as well:
-const repoNoBase = createMongoRepo({ collection, mongoClient });
-await repoNoBase.create(expense, { mergeTrace: { operation: 'import-csv' } });
-// Document includes: { ..., _trace: { operation: 'import-csv', _op: 'create', _at: Date } }
-```
-
-**Automatic Metadata:**
-
-The repository automatically adds operation metadata:
-
-- `_op`: The operation type ('create', 'update', 'delete')
-- `_at`: Timestamp when the trace was written
-
-See [Audit Trail Strategies with Tracing](#audit-trail-strategies-with-tracing) for comprehensive examples of building audit systems using trace context.
-
-#### Options
-
-The `options` parameter configures consistency features and repository behavior:
-
-**`generateId?: 'server' | (() => string)`** - Controls how datastore IDs are generated.
-
-- `'server'` (default): use MongoDB-native ObjectIds. IDs are allocated client-side (new ObjectId()) for stability during `createMany` and returned as strings by the repo.
-- `() => string`: provide a custom generator (e.g., uuid, domain-specific). The generated string is used as the datastore `_id`.
-
-**`idKey?: StringKeys<T>`** - Public entity property name that exposes the ID, default `'id'`. The repo always returns entities with this property populated from the datastore `_id` (converted to string). This key is treated as readonly for updates.
-
-**`mirrorId?: boolean`** - Default `false`. When `true`, the repo also persists the ID as a normal field in the document under `idKey`. When `false`, `idKey` is computed on reads but not stored in the document.
-
-**`softDelete?: boolean`** - Enables soft delete functionality. When `true`, delete operations mark entities with a `_deleted` flag instead of physically removing them from the database. Soft-deleted entities are automatically excluded from all read operations (`find`, `getById`, `count`). Defaults to `false` (hard delete).
-
-**`traceTimestamps?: true | 'server' | (() => Date)`** - Configures automatic timestamping behavior. When `true`, uses application time (JavaScript `Date`). When `'server'`, uses the datastore/server timestamp. When a function is provided, that function is called to generate timestamps (this can come in handy for integration tests). The timestamps are applied as follows: `createdAt` is set during `create`, `createMany` operations and when `upsert`/`upsertMany` creates new entities; `updatedAt` is set on all write operations (`create`, `createMany`, `update`, `updateMany`, `upsert`, `upsertMany`, `delete`, `deleteMany`); `deletedAt` is set during soft delete operations when `softDelete` is enabled.
-
-**`timestampKeys?: TimestampConfig<T>`** - Customizes timestamp field names. By default, uses `_createdAt`, `_updatedAt`, and `_deletedAt`. Provide an object like `{ createdAt: 'dateCreated', updatedAt: 'dateModified' }` to use custom field names that match your entity schema. You don't need to specify all keys - any unspecified keys will fall back to their default names. Note that the `deletedAt` key is only used when soft delete is enabled. When this option is provided, `traceTimestamps` is implicitly set to `true`, so there's no need to specify both options.
-
-**`version?: VersionConfig`** - Enables optimistic versioning. When `true`, uses the default `_version` field that increments on each update. Alternatively, provide a custom numeric field name from your entity type. Version increments happen automatically on all update operations, helping detect concurrent modifications.
-
-**`traceKey?: string`** - Customizes the field name used to store trace context in documents. Defaults to `_trace`. Use this to match your entity schema or avoid conflicts with existing fields. When using the default field name, it's automatically hidden from read results unless explicitly configured as an entity property.
-
-**`traceStrategy?: 'latest' | 'bounded' | 'unbounded'`** - Controls how trace information is stored. Defaults to `'latest'`.
-
-- **latest (default)**: Stores only the most recent trace context, overwriting previous traces with each operation
-- **bounded**: Maintains an array of recent traces with size limits, useful for tracking operation sequences on the same document
-- **unbounded**: Maintains an unlimited array of all traces, providing complete operation history (use with caution due to potential document size growth)
-
-**`traceLimit?: number`** - Maximum number of traces to retain when using `'bounded'` strategy. Required when `traceStrategy` is `'bounded'`. Not used with `'latest'` or `'unbounded'` strategies. The repository automatically manages the array size, keeping only the most recent traces.
-
-```typescript
-// Latest strategy (default)
-const repo = createMongoRepo({
-  collection,
-  mongoClient,
-  traceContext: { userId: 'john' },
-  // Document: { ..., _trace: { userId: 'john', _op: 'update', _at: Date } }
-});
-
-// Bounded strategy with history
-const auditRepo = createMongoRepo({
-  collection,
-  mongoClient,
-  traceContext: { userId: 'john' },
-  options: {
-    traceStrategy: 'bounded',
-    traceLimit: 5,
-  },
-  // Document: { ..., _trace: [{ userId: 'john', _op: 'create', _at: Date1 }, { userId: 'jane', _op: 'update', _at: Date2 }] }
-});
-
-// Unbounded strategy with complete history
-const fullHistoryRepo = createMongoRepo({
-  collection,
-  mongoClient,
-  traceContext: { userId: 'john' },
-  options: {
-    traceStrategy: 'unbounded', // No traceLimit needed
-  },
-  // Document: { ..., _trace: [{ /* unlimited array of all operations */ }] }
-});
-```
 
 **`session?: ClientSession`** - MongoDB session for transaction support. When provided, all repository operations will use this session, making them part of an existing transaction. Typically used internally by `withSession()` and `runTransaction()` methods rather than passed directly by users.
 
@@ -1770,99 +1616,16 @@ class ExpenseService {
 
 Why implementations for MongoDB and Firestore?
 
+remarks about other features...
+
+contribution: how can I express that this is for now a solo project?
+
 ## Roadmap
 
 PostgreSQL
 
+better merge into FAQ?
 
-# BACKUP SECTIONS
+## License
 
-## Configuration
-
-Key options (shared unless noted):
-
-- **Identity**
-  - `generateId?: 'server' | (() => string)` — default `'server'` (Mongo ObjectId / Firestore doc id)
-  - `idKey?: keyof T` — default `'id'`
-  - `mirrorId?: boolean` — persist public id in documents (off by default)
-- **Consistency**
-  - `softDelete?: boolean` — enable soft delete
-  - `traceTimestamps?: true | 'server' | (() => Date)` — timestamp source
-  - `timestampKeys?: { createdAt?; updatedAt?; deletedAt? }` — custom keys imply timestamping
-  - `version?: true | keyof T` — versioning field (default `_version`)
-- **Tracing**
-  - `traceKey?: keyof T` — default `_trace`
-  - `traceStrategy?: 'latest' | 'bounded' | 'unbounded'`
-    - Firestore: `'bounded'` not supported (throws)
-  - `traceLimit?: number` — required for `'bounded'`
-
-## Database Differences
-
-### MongoDB
-
-- **Soft delete**: filters on “marker does not exist”; deletes set the marker.
-- **Pagination**: cursor is `_id` (ObjectId string) and `_id` is always a tiebreaker; compound sorts supported with a cursor filter.
-- **Updates**: query-based (`updateMany`); large inputs chunked to respect driver limits.
-- **Tracing**: all strategies supported; server timestamps via `$currentDate` when configured.
-
-### Firestore
-
-- **Soft delete**: documents created with `_deleted: false`, reads filter `_deleted == false`.
-- **Pagination**: cursor is document id; sort requires `__name__` tiebreaker.
-- **Updates**: batched writes; multi-document updates chunked (`IN` limits).
-- **Tracing**: supports `'latest'` and `'unbounded'` (throws on `'bounded'`).
-- **Transactions**: reads must occur before writes; repository methods that read inside must be called in the read phase.
-
-#### Input Type Distinction
-
-Slire uses distinct input types for different operations to provide compile-time safety:
-
-- **`UpdateInput`**: Used for update operations - excludes all managed fields (system fields like timestamps/version/id, plus scope fields). This prevents accidental modification of fields that should be repository-controlled.
-- **`CreateInput`**: Used for create/upsert operations - includes all `UpdateInput` fields plus optional managed fields. The managed fields are allowed purely as a convenience feature so you don't have to manually strip them from objects. System fields (timestamps, version, id) are ignored internally and auto-generated. Scope fields are validated to match the repository's configured scope values - mismatches cause the operation to fail.
-
-The relationship: `CreateInput = UpdateInput & Partial<ManagedFields>`. This design ensures updates are strict while creation validates managed fields for correctness (scope fields must match, system fields are ignored) for developer convenience.
-
-**Example:**
-
-```typescript
-type User = {
-  id: string;
-  organizationId: string; // scope field
-  name: string;
-  email: string;
-  _createdAt?: Date;
-  _updatedAt?: Date;
-};
-
-// With scope { organizationId: 'acme-123' } and timestamps enabled:
-// UpdateInput = { name: string; email: string }
-// CreateInput = { name: string; email: string; id?: string; organizationId?: string; _createdAt?: Date; _updatedAt?: Date }
-
-// ✅ Valid update - only user data
-await repo.update(id, { set: { name: 'John' } });
-
-// ❌ Compile error - can't update managed fields (timestamps)
-await repo.update(id, { set: { _createdAt: new Date() } });
-
-// ❌ Compile error - can't update managed fields (scope)
-await repo.update(id, { set: { organizationId: 'other-org' } });
-
-// ✅ Valid create - managed fields optional
-await repo.create({ name: 'John', email: 'john@example.com' });
-
-// ✅ Valid create - matching scope field ignored, others auto-generated
-await repo.create({
-  id: 'will-be-ignored',
-  organizationId: 'acme-123', // matches repo scope - allowed but ignored
-  name: 'John',
-  email: 'john@example.com',
-  _createdAt: new Date(), // ignored - repo generates its own
-});
-
-// ❌ Runtime error - scope field doesn't match repository configuration
-await repo.create({
-  name: 'John',
-  email: 'john@example.com',
-  organizationId: 'other-org', // doesn't match scope 'acme-123' - operation fails
-});
-```
+todo
