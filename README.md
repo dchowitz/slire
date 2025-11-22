@@ -1320,26 +1320,81 @@ Slire is a combination of "slim" and "repo".
 
 ### Why yet another data abstraction?
 
+Slire focuses on the consistency features many teams re‑implement (scope, timestamps, versioning, soft delete, tracing) while keeping native drivers front‑and‑center.
+
+No query DSL, no model mapping, no migrations. If you need advanced queries or bulk operations, you should use the native driver directly — Slire provides helpers to keep those native operations consistent with your repository settings.
+
+The goal is less boilerplate, fewer foot‑guns, and a consistent, type‑safe CRUD surface you can adopt incrementally.
+
 ### When to use Slire?
+
+Use it when you want:
+  - Consistent scope enforcement (multi‑tenancy/partitioning) across reads/updates/deletes
+  - Managed fields handled correctly every time (timestamps/version/trace, soft delete)
+  - Type‑safe CRUD with projections and cursor‑based pagination
+  - Minimal ceremony with the ability to drop to the native driver at any time
+
+Consider something else if you need:
+  - Rich query DSLs, joins, ORMs/ODMs with identity maps/lazy loading
+  - Schema migration tooling or declarative schema management
+  - Rich model lifecycle hooks, cascading writes, or implicit data‑layer business logic (typical ORM features). Slire keeps business logic in services; repositories are intentionally thin.
 
 ### Is Slire production-ready?
 
+Slire is quite fresh (born in summer'25 during vacationing) and started as the author's exploration of better data‑access patterns observed in day‑to‑day work. It aims to be pragmatic and minimal; consider incremental adoption.
+
+The API is fairly stable and covered by automated tests for MongoDB and Firestore. Versioning follows SemVer (MAJOR.MINOR.PATCH). Pin exact versions during early adoption and review release notes.
+
+Firestore and MongoDB behaviors differ by their nature; the README and code call out those differences explicitly.
+
 ### What is the release cadence and roadmap?
+
+No fixed schedule or published roadmap; development is need‑driven and shaped by community feedback. Open issues to influence priorities.
+
+Near‑term focus:
+- Polishing docs and examples
+- A helper for optimistic concurrency in MongoDB
+
+DB-agnostic API extensions:
+- more expressive filters (always a "Gratwanderung")
+- bulk updates
+- exists
+
+Exploratory backends (no ETA):
+- PostgreSQL (document‑ish JSONB mapping and/or table‑centric repo)
+- AWS DocumentDB (Mongo protocol)
+- CosmosDB
 
 ### Can I mix it with an ORM/ODM?
 
+- Yes. Slire is intentionally small. You can:
+  - Use Slire for collections where you want its consistency features, and keep your existing ORM/ODM elsewhere.
+  - Use your ORM/ODM for complex reads/aggregations and call native driver operations, reusing Slire helpers like `applyConstraints(...)` and `buildUpdateOperation(...)` to keep scope/timestamps/versioning/tracing consistent.
+
 ### Why implementations for MongoDB and Firestore?
+
+- They represent two popular, but meaningfully different, document stores:
+  - MongoDB: filter‑merged scope, powerful server‑side updates, flexible bulk operations
+  - Firestore: path‑scoped collections, read‑before‑write constraints in transactions, server‑side count, batch/IN limits
+- Supporting both validates that Slire’s abstraction stays minimal and honest about differences instead of pretending they don’t exist.
 
 ### How to add a new backend?
 
+- Implement a factory `createXRepo` that returns the `Repo<T,...>` plus optional backend‑specific helpers:
+  - Identity: honor `generateId`, `idKey`, `mirrorId`
+  - Scope: either merge into reads/writes (like MongoDB) or validate on writes only (like Firestore with path scoping)
+  - Soft delete: define the server‑side filter and write behavior
+  - Managed fields: map timestamps/version and trace strategies to native update primitives
+  - Queries: exact‑equality filters only; implement `find`, `findPage` (stable tiebreaker), `count`
+  - Batching/limits: chunk large inputs to native limits, define cursor formats, validate cursors
+  - Transactions: provide `withTransaction`/`runTransaction` wrappers that respect backend rules
+- Start by studying `src/mongo-repo.ts` and `src/firestore-repo.ts`; mirror their structure and reuse `repo-config` to enforce invariants.
 
+### Can I contribute?
 
+This is currently a solo project. I’m happy to receive issues, questions, and design discussions.
 
-contribution: how can I express that this is for now a solo project?
-
-what's the roadmap? which features/implementations to expect?
-
-PostgreSQL, DocumentDB
+Small, focused PRs (bug fixes or doc improvements) are welcome; please open an issue first for new features or new backends to align on scope and approach.
 
 ## License
 
