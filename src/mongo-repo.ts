@@ -283,7 +283,7 @@ export function createMongoRepo<
 
       return result;
     } else if (traceStrategy === 'bounded') {
-      // For bounded strategy with server timestamps, add client timestamp to avoid complexity
+      // For bounded strategy with server timestamps, add client timestamp to avoid complexity (read before write)
       const finalTraceValue = needsServerTimestamp
         ? { ...traceValue, _at: new Date() }
         : traceValue;
@@ -299,7 +299,7 @@ export function createMongoRepo<
         },
       };
     } else if (traceStrategy === 'unbounded') {
-      // For unbounded strategy with server timestamps, add client timestamp to avoid complexity
+      // For unbounded strategy with server timestamps, add client timestamp to avoid complexity (read before write)
       const finalTraceValue = needsServerTimestamp
         ? { ...traceValue, _at: new Date() }
         : traceValue;

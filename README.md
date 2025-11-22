@@ -855,7 +855,7 @@ Saving trace data with each write provides a lightweight, always‑available aud
 
 MongoDB notes:
 - with server timestamps enabled, the repository uses `$currentDate` for the `_trace._at` field when needed
-- for `bounded` [traceStrategy](#tracestrategy) `_trace._at` falls back to application time to avoid read-before-write
+- for `bounded` and `unbounded` [traceStrategy](#tracestrategy) `_trace._at` falls back to application time to avoid read-before-write
 
 Firestore notes:
 - with server timestamps enabled, the repository uses `FieldValue.serverTimestamp()` for `_trace._at`
