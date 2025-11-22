@@ -78,28 +78,8 @@ export type FirestoreRepo<
 >;
 
 /**
- * Creates a Firestore repository with type-safe CRUD operations.
- *
- * @template T The entity type (must have id: string)
- * @template Config Repository configuration options (inferred from options parameter)
- *
- * Advanced generics (Managed, UpdateInput, CreateInput) are computed automatically - you typically don't need to specify them.
- *
- * @example
- * ```typescript
- * type User = { id: string; name: string; email: string };
- * const repo = createSmartFirestoreRepo<User>({ collection, firestore });
- * // Config, Managed, and InputEntity are inferred automatically
- *
- * // With configuration:
- * const repoWithConfig = createSmartFirestoreRepo<User>({
- *   collection,
- *   firestore,
- *   options: { softDelete: true, traceTimestamps: true }
- * });
- * // InputEntity becomes: { name: string; email: string; id?: string }
- * ```
- *
+ * Create a Firestore-backed Slire repository with type-safe CRUD and Firestore helpers.
+ * See README (“Firestore Implementation”) for usage and configuration details.
  */
 export function createFirestoreRepo<
   T extends { id: string },

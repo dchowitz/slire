@@ -63,30 +63,9 @@ export type MongoRepo<
 >;
 
 /**
- * Creates a MongoDB repository with type-safe CRUD operations.
- *
- * @template T The entity type (must have id: string)
- * @template Config Repository configuration options (inferred from options parameter)
- *
- * Advanced generics (Managed, UpdateInput, CreateInput) are computed automatically - you typically don't need to specify them.
- *
- * @example
- * ```typescript
- * type User = { id: string; name: string; email: string };
- * const repo = createSmartMongoRepo<User>({ collection, mongoClient });
- * // Config, Managed, and InputEntity are inferred automatically
- *
- * // With configuration:
- * const repoWithConfig = createSmartMongoRepo<User>({
- *   collection,
- *   mongoClient,
- *   options: { softDelete: true, traceTimestamps: true }
- * });
- * // InputEntity becomes: { name: string; email: string; id?: string }
- * ```
- *
+ * Create a MongoDB-backed Slire repository with type-safe CRUD and Mongo helpers.
+ * See README (“MongoDB Implementation”) for usage and configuration details.
  */
-
 export function createMongoRepo<
   T extends { id: string },
   Scope extends Partial<T> = {},
