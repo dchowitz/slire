@@ -3055,7 +3055,7 @@ describe('createtMongoRepo', function () {
       const optimisticUpdate = async (
         id: string,
         update: Parameters<typeof repo.update>[1],
-        options: { expectedVersion: number, mergeTrace?: any},
+        options: { expectedVersion: number; mergeTrace?: any },
       ) => {
         const result = await repo.collection.updateOne(
           repo.applyConstraints({
