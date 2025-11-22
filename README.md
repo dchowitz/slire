@@ -4,6 +4,7 @@
 - [Quickstart](#quickstart)
 - [API](#api)
 - [Configuration](#configuration)
+- [MongoDB Implementation](#mongodb-implementation)
 
 ---
 
@@ -910,7 +911,7 @@ content below is temporary and needs restructure...
 
 ## MongoDB Implementation
 
- The MongoDB implementation provides a repository factory and a small set of helpers on top of the DB‑agnostic API. It covers sessions/transactions and native collection helpers for cases that require direct collection access while keeping scope, timestamps, versioning, and tracing consistent with the repository.
+ The MongoDB implementation provides a repository factory that returns a small set of helpers on top of the DB‑agnostic API. It covers sessions/transactions and native collection helpers for cases that require direct collection access while keeping scope, timestamps, versioning, and tracing consistent with the repository.
 
 ### createMongoRepo
 
@@ -922,7 +923,7 @@ What you get in addition to the DB‑agnostic API are direct `collection` access
 
 ### Sessions and transactions
 
-`withSession(session: ClientSession)` creates a session‑bound repository that participates in the given transaction for all subsequent operations. The returned instance preserves scope, timestamps, versioning, and trace settings. Calling it on an already session‑bound repo replaces the session; MongoDB does not support nested transactions. Use this to coordinate a single MongoDB session across multiple repositories operating on different collections.
+The repository function `withSession(session: ClientSession)` creates a session‑bound repository that participates in the given transaction for all subsequent operations. The returned instance preserves scope, timestamps, versioning, and trace settings. Calling it on an already session‑bound repo replaces the session; MongoDB does not support nested transactions. Use this to coordinate a single MongoDB session across multiple repositories operating on different collections.
 
 Example (multiple repositories in one transaction):
 ```ts
@@ -945,7 +946,6 @@ await client.withSession(async (session) => {
     const task = await tasks.getById(taskId);
     if (!task) throw new Error('Task not found');
 
-    // Mark task done and update its project's progress in the same transaction
     await tasks.update(
       taskId,
       { set: { status: 'done' } },
@@ -963,13 +963,11 @@ await client.withSession(async (session) => {
 
 `runTransaction(callback)` is a convenience wrapper that creates a session, starts a transaction, gives you a session‑aware repo inside the callback, and commits or rolls back automatically. Use it when a single‑collection transaction via the repository API is sufficient; use `withSession` if you need to mix repository calls with native driver operations within the same transaction.
 
-Large inputs are chunked internally by repo methods to respect driver limits. When you drop down to the native collection, prefer the helpers below to preserve scope and managed fields, and wrap multi‑step read/modify/write sequences in a transaction to avoid races.
-
 ### collection
 
 `collection: Collection<any>`
 
-Direct access to the underlying MongoDB collection instance. This property allows you to perform advanced MongoDB operations that aren't covered by the Slire interface, such as aggregations, complex queries, bulk operations, or any other collection-level methods. When using the collection directly, you can still leverage the repository's helper methods (`applyConstraints`, `buildUpdateOperation`) to maintain consistency with the repository's configured scoping, timestamps, and versioning behavior.
+This property gives direct access to the underlying MongoDB collection instance and allows you to perform advanced MongoDB operations that aren't covered by the Slire interface, such as aggregations, complex queries, bulk operations, or any other collection-level methods. When using the collection directly, you can still leverage the repository's helper methods (`applyConstraints`, `buildUpdateOperation`) to maintain consistency with the repository's configured scoping, timestamps, and versioning behavior.
 
 ### applyConstraints
 
@@ -984,7 +982,6 @@ Helper method that applies the repository's scope filtering to a given filter ob
 Helper method that transforms a repository update operation into a MongoDB-compliant update document with all configured consistency features applied. Takes an `UpdateOperation<UpdateInput>` with `set` and/or `unset` fields and automatically adds timestamps (like `updatedAt`), version increments, trace context (if enabled), and any other configured repository features. The optional `mergeTrace` parameter allows adding operation-specific trace context that gets merged with the repository's base trace context. Modification of system-managed fields is both prevented at compile time (type-level) and at runtime. This ensures that direct collection operations maintain the same consistency behavior as the repository's built-in update methods. Essential when performing direct `updateOne`, `updateMany`, or `bulkWrite` operations on the collection.
 
 ```typescript
-// Using buildUpdateOperation with trace context
 const updateOp = repo.buildUpdateOperation(
   { set: { status: 'processed' } },
   { operation: 'batch-process', jobId: 'job-123' }
@@ -1041,7 +1038,7 @@ Note: The replace-like pattern performs a pre-read to compute unset keys. To avo
 
 ### Notes
 
-When using the native collection directly, remember that the public `idKey` maps to `_id` and may be an `ObjectId` when `generateId: 'server'` is used; convert string ids accordingly. The repository ensures stable ordering by appending `_id` as a tiebreaker where needed; mirror this pattern in custom queries if you depend on deterministic ordering.
+When using the native collection directly, remember that the public `idKey` maps to `_id` and may be an `ObjectId` when `generateId: 'server'` is used; convert string ids accordingly. The repository ensures stable ordering by appending `_id` as a tiebreaker where needed; mirror this pattern in custom queries if you depend on deterministic ordering. Repository methods automatically chunk large batches to respect MongoDB limits (see `createMany`, `updateMany`, and `deleteMany`); when issuing large native operations yourself, apply appropriate batching as needed.
 
 ## Firestore Implementation
 
