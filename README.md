@@ -1375,9 +1375,9 @@ Yes. Slire is intentionally small. You can:
 
 These are the datastores I’ve spent most of the last few years working with in production.
 
-They represent two popular, but meaningfully different, document stores:
-- MongoDB: filter‑merged scope, powerful server‑side updates, flexible bulk operations
-- Firestore: path‑scoped collections, read‑before‑write constraints in transactions, server‑side count, batch/IN limits
+They represent two popular, but meaningfully different, document stores with distinct strengths:
+- MongoDB: a general‑purpose document database with rich query and aggregation capabilities, flexible schema, mature multi‑document transactions, and broad deployment options (self‑hosted and Atlas). A strong fit for backend services that need expressive queries, bulk operations, and operational flexibility.
+- Firestore: a serverless document store with automatic scaling, strong document‑level consistency, a simple query model backed by composite indexes, and first‑class mobile/web SDKs (offline sync, security rules). A strong fit for event‑driven/mobile backends and high‑scale read‑heavy APIs with predictable operations.
 
 Supporting both validates that Slire’s abstraction stays minimal and honest about differences instead of pretending they don’t exist.
 
