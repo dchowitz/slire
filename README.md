@@ -1356,9 +1356,9 @@ Near‑term focus:
 - A helper for optimistic concurrency in MongoDB
 
 DB-agnostic API extensions:
-- more expressive filters (always a "Gratwanderung")
+- filters beyond exact‑equality (a tightrope walk between power and minimalism)
 - bulk updates
-- exists
+- existence checks
 
 Exploratory backends (no ETA):
 - PostgreSQL (document‑ish JSONB mapping and/or table‑centric repo)
@@ -1367,16 +1367,19 @@ Exploratory backends (no ETA):
 
 ### Can I mix it with an ORM/ODM?
 
-- Yes. Slire is intentionally small. You can:
-  - Use Slire for collections where you want its consistency features, and keep your existing ORM/ODM elsewhere.
-  - Use your ORM/ODM for complex reads/aggregations and call native driver operations, reusing Slire helpers like `applyConstraints(...)` and `buildUpdateOperation(...)` to keep scope/timestamps/versioning/tracing consistent.
+Yes. Slire is intentionally small. You can:
+- Use Slire for collections where you want its consistency features, and keep your existing ORM/ODM elsewhere.
+- Use your ORM/ODM for complex reads/aggregations and call native driver operations, reusing Slire helpers like `applyConstraints(...)` and `buildUpdateOperation(...)` to keep scope/timestamps/versioning/tracing consistent.
 
 ### Why implementations for MongoDB and Firestore?
 
-- They represent two popular, but meaningfully different, document stores:
-  - MongoDB: filter‑merged scope, powerful server‑side updates, flexible bulk operations
-  - Firestore: path‑scoped collections, read‑before‑write constraints in transactions, server‑side count, batch/IN limits
-- Supporting both validates that Slire’s abstraction stays minimal and honest about differences instead of pretending they don’t exist.
+These are the datastores I’ve spent most of the last few years working with in production.
+
+They represent two popular, but meaningfully different, document stores:
+- MongoDB: filter‑merged scope, powerful server‑side updates, flexible bulk operations
+- Firestore: path‑scoped collections, read‑before‑write constraints in transactions, server‑side count, batch/IN limits
+
+Supporting both validates that Slire’s abstraction stays minimal and honest about differences instead of pretending they don’t exist.
 
 ### How to add a new backend?
 
