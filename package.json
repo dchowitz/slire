@@ -15,6 +15,11 @@
   "files": [
     "dist"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dchowitz/slire.git"
+  },
+  "homepage": "https://github.com/dchowitz/slire#readme",
   "scripts": {
     "build": "tsup",
     "test": "jest",
