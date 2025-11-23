@@ -154,30 +154,7 @@ await repo.runTransaction(async (tx) => {
 });
 ```
 
-This is a partially contrived example. For MongoDB, you’d normally perform a query‑based update in one round trip using the native driver directly. Firestore does not support query‑based writes, so they are not part of Slire’s DB-agnostic API.
-
-The example above can be written more verbosely like this when working with MongoDB (revealing how `runTransaction` is implemented):
-
-```typescript
-await mongoClient.withSession(async (session) => {
-  await session.withTransaction(async () => {
-    const tx = repo.withSession(session); // a new transaction-aware repo instance
-
-    const now = new Date();
-    const tasks = await tx
-      .find({ status: 'in_progress' }, { id: true, dueDate: true })
-      .toArray();
-
-    const overdueIds = tasks
-      .filter((t) => t.dueDate && t.dueDate < now)
-      .map((t) => t.id);
-
-    if (overdueIds.length > 0) {
-      await tx.updateMany(overdueIds, { set: { status: 'archived' } });
-    }
-  });
-});
-```
+This is a partially contrived example. For MongoDB, you’d normally perform a query‑based update in one round trip using the native driver directly. Firestore does not support query‑based writes, so they are not part of Slire’s DB‑agnostic API. If you need lower‑level control, you can also manage transaction handles yourself. For example, `runTransaction` of a MongoDB repo instance is just a convenience wrapper over the native client's `withSession(...)` (see below).
 
 This approach obviously also allows you to have transactions that span multiple repositories - just create session-aware instances from different MongoDB repositories using the same session and all their operations will participate in the same transaction.
 
