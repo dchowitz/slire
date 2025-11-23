@@ -1306,6 +1306,8 @@ No query DSL, no model mapping, no migrations. If you need advanced queries or b
 
 The goal is less boilerplate, fewer foot‑guns, and a consistent, type‑safe CRUD surface you can adopt incrementally.
 
+For the full rationale, see [Why Slire?](docs/WHY.md).
+
 ### When to use Slire?
 
 Use it when you want:
