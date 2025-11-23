@@ -208,7 +208,7 @@ The operations below comprise the full set of repository functions in Slire. The
 
 **Note 3**: Scope filtering and other consistency features are configured at repository instantiation, not in the function signatures. Where relevant, function descriptions reference their effects as part of the interface contract that every implementation must honor.
 
-**Note 4**: Transactions and native‑driver helpers are implementation‑specific. See:
+**Note 4**: Transactions and native‑driver helpers are implementation‑specific. Consult the corresponding sections:
   - [MongoDB Implementation](#mongodb-implementation)
   - [Firestore Implementation](#firestore-implementation)
 
@@ -1294,9 +1294,9 @@ Follow the database‑specific notes above: index equality filters and sort keys
 
 ## FAQ
 
-### What does "Slire" mean?
+### What’s “Slire”?
 
-Slire is a combination of "slim" and "repo".
+It’s pronounced /slaɪr/ and blends “slim” + “repo”.
 
 ### Why yet another data abstraction?
 
@@ -1321,11 +1321,11 @@ Consider something else if you need:
 
 ### Is Slire production-ready?
 
-Slire is quite fresh (born in summer'25 during vacationing) and started as the author's exploration of better data‑access patterns observed in day‑to‑day work. It aims to be pragmatic and minimal; consider incremental adoption.
+Slire is new and began as the author's exploration of cleaner data‑access patterns from day‑to‑day work. It aims to be pragmatic and minimal — adopt incrementally.
 
 The API is fairly stable and covered by automated tests for MongoDB and Firestore. Versioning follows SemVer (MAJOR.MINOR.PATCH). Pin exact versions during early adoption and review release notes.
 
-Firestore and MongoDB behaviors differ by their nature; the README and code call out those differences explicitly.
+MongoDB and Firestore differ in behavior (transactions, query model, limits). Those differences are called out where relevant and reflected in the implementations.
 
 ### What is the release cadence and roadmap?
 
