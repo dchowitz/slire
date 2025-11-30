@@ -15,7 +15,9 @@ However, this approach introduces several fundamental challenges:
 - **Performance bottlenecks**: The N+1 problem, inefficient query generation, and excessive roundtrips frequently require bypassing the ORM for performance-critical operations.
 - **Additional complexity**: Another abstraction layer to learn and debug, especially problematic when native database features are eventually needed anyway.
 
-These challenges are well-documented in the development community. Ted Neward famously called the ["Object-Relational Impedance Mismatch"](https://blog.codinghorror.com/object-relational-mapping-is-the-vietnam-of-computer-science/) the "Vietnam War of Computer Science" (original article [here](https://www.odbms.org/wp-content/uploads/2013/11/031.01-Neward-The-Vietnam-of-Computer-Science-June-2006.pdf)). The [N+1 query problem](https://stackoverflow.com/questions/97197/what-is-the-n1-selects-problem-in-orm-object-relational-mapping) remains a persistent issue across major ORMs, and mainstream tools explicitly document raw/native escape hatches for advanced use cases: [Prisma raw database access](https://www.prisma.io/docs/orm/prisma-client/queries/raw-database-access), [TypeORM Select QueryBuilder](https://typeorm.io/select-query-builder) and [raw SQL](https://typeorm.io/#/select-query-builder/raw-sql-query), [MikroORM raw queries](https://mikro-orm.io/docs/queries#raw-sql-queries), and [Mongoose native driver via Model.collection](https://mongoosejs.com/docs/api/model.html#Model.collection). See also Fowler’s perspective on trade‑offs: [“ORM Hate”](https://martinfowler.com/bliki/OrmHate.html).
+These challenges are well-documented in the development community. Ted Neward famously called the ["Object-Relational Impedance Mismatch"](https://blog.codinghorror.com/object-relational-mapping-is-the-vietnam-of-computer-science/) the "Vietnam War of Computer Science" (original article [here](https://www.odbms.org/wp-content/uploads/2013/11/031.01-Neward-The-Vietnam-of-Computer-Science-June-2006.pdf)). The [N+1 query problem](https://stackoverflow.com/questions/97197/what-is-the-n1-selects-problem-in-orm-object-relational-mapping) remains a persistent issue across major ORMs, and mainstream tools either explicitly document raw/native escape hatches for advanced use cases or point to native drivers directly. See also:
+- Fowler’s perspective on trade‑offs - [“ORM Hate”](https://martinfowler.com/bliki/OrmHate.html),
+- [ORMs are nice but they are the wrong abstraction](https://workdad.dev/posts/orms-are-nice-but-they-are-the-wrong-abstraction/)
 
 While these critiques often target ORMs for relational databases, ODMs for document stores are not immune. They avoid parts of the object‑relational impedance mismatch, but still introduce an abstraction that enforces particular mental models and constraints. Many ODMs encourage strict schemas, lifecycle hooks, or query builders that can pull you away from the flexible, document‑oriented model these databases are designed for. The practical result is similar: for non‑trivial cases you reach for the native driver, while carrying the ongoing cost of the extra layer.
 
@@ -28,7 +30,7 @@ Slire emerged from a fundamentally different perspective: start with native data
 **Core principles:**
 
 - **Native-first access**: Direct database operations are the primary interface, not an escape hatch. Slire provides helpers that enhance native access rather than replacing it.
-- **Minimal, focused abstraction**: Only the most common operations (basic CRUD) get convenience methods. Complex operations use native database features with optional consistency helpers.
+- **Minimal, focused abstraction**: Only the most common operations (basic CRUD, simple queries) get convenience methods. Complex operations use native database features with optional consistency helpers.
 - **Automatic multi-tenancy**: Built-in scoping eliminates the repetitive, error-prone task of manually adding tenant filters to every query.
 - **Optional consistency**: Instead of forcing rigid schemas, Slire provides optional consistency guarantees (timestamps, versioning, soft delete, tracing) that work with native operations.
 
@@ -40,6 +42,4 @@ Slire doesn't try to replace your database knowledge with abstractions. Instead 
 
 **Bottom-up design from real patterns:**
 
-This approach emerged organically from observing teams repeatedly writing the same basic CRUD operations, inconsistently applying timestamps and audit trails, and struggling with tightly coupled business logic. Slire codifies these proven patterns while working alongside direct database access. The extensive architectural guidance in the second part of this document then shows how to integrate tools like Slire effectively into application architecture and business logic - patterns that evolved from practical necessity, not theoretical design.
-
-
+This approach emerged organically from observing teams repeatedly writing the same basic CRUD operations, inconsistently applying timestamps and audit trails, and struggling with tightly coupled business logic. Slire codifies these proven patterns while working alongside direct database access. Some [architectural guidance](DESIGN.md) shows how to integrate tools like Slire effectively into application architecture and business logic - patterns that evolved from practical necessity, not theoretical design.
