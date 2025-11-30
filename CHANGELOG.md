@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [0.0.3] - 2025-11-30
+### Changed
+- Docs: WHY — fix links, misc improvements.
+- Docs: AUDIT — better examples, pluggable event emitter approach.
+
 ## [0.0.2] - 2025-11-23
 ### Changed
 - Docs: README — install notes for peer deps; FAQ and examples polished.
@@ -16,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - Initial public version.
 
 <!-- Links -->
-[Unreleased]: https://github.com/dchowitz/slire/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/dchowitz/slire/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/dchowitz/slire/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/dchowitz/slire/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/dchowitz/slire/releases/tag/v0.0.1
