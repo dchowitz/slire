@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [0.0.3] - 2025-11-30
 ### Changed
+- Chore: regenerate `package-lock.json`.
+- Tests: fix fixtures (don't assume colima).
 - Docs: WHY — fix links, misc improvements.
 - Docs: AUDIT — better examples, pluggable event emitter approach.
 
