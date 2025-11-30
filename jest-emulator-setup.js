@@ -1,6 +1,11 @@
-const { spawn } = require('child_process');
-const net = require('net');
-const { promisify } = require('util');
+import { spawn } from 'child_process';
+import net from 'net';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { promisify } from 'util';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const sleep = promisify(setTimeout);
 
 const requiredPorts = [8080, 4400]; // firestore, hub (default ports)
@@ -140,7 +145,7 @@ async function stopEmulator() {
 }
 
 // Jest global setup
-module.exports = async () => {
+export default async () => {
   try {
     await startEmulator();
     // Store the cleanup function globally
