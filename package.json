@@ -24,13 +24,11 @@
     "build": "tsup",
     "test": "jest",
     "clean": "rimraf dist",
-    "prepublishOnly": "pnpm run clean && pnpm run build && pnpm test && pnpm run lint && pnpm run format",
-    "publish:dry": "pnpm publish --dry-run",
-    "release": "pnpm run clean && pnpm run build && pnpm test && pnpm publish --access public --provenance",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier . --check",
-    "format:fix": "prettier . --write"
+    "format:fix": "prettier . --write",
+    "ci": "pnpm run clean && pnpm run build && pnpm test && pnpm run lint && pnpm run format"
   },
   "peerDependencies": {
     "@google-cloud/firestore": "^7 || ^8",
@@ -63,7 +61,7 @@
   ],
   "sideEffects": false,
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "publishConfig": {
     "access": "public"

@@ -27,8 +27,9 @@ async function startEmulator() {
   // Use npx to run local firebase-tools from devDependencies
   // This ensures we use the version specified in package.json
   emulatorProcess = spawn(
-    'npx',
+    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
     [
+      'exec',
       'firebase',
       'emulators:start',
       '--only=firestore',
