@@ -1,3 +1,5 @@
+# Design
+
 - [Decoupling Business Logic from Data Access](#decoupling-business-logic-from-data-access)
   - [Scope: Database Operations and Beyond](#scope-database-operations-and-beyond)
   - [Explicit Dependencies](#explicit-dependencies)
