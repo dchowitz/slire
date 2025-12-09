@@ -31,6 +31,10 @@ Currently implemented for [MongoDB](https://www.mongodb.com/) and [Firestore](ht
 
 Want the full rationale? See [Why Slire?](docs/WHY.md).
 
+For architectural patterns around repositories and data access, see the [Data Access Design Guide](docs/DESIGN.md#data-access-design-guide).
+
+For audit and tracing strategies, see [Audit Trail Strategies with Tracing](docs/AUDIT.md#audit-trail-strategies-with-tracing).
+
 ## Install
 
 ```bash
@@ -180,10 +184,10 @@ export async function archiveOverdueInProgressTasks({
   await mongoClient.withSession(async (session) => {
     await session.withTransaction(async () => {
       // Use native MongoDB update with Slire helpers:
-      // - applyConstraints: merges scope and soft-delete filtering
+      // - applyFilter: merges scope and soft-delete filtering
       // - buildUpdateOperation: applies timestamps/versioning/tracing consistently
       await repo.collection.updateMany(
-        repo.applyConstraints({ status: 'in_progress', dueDate: { $lt: now } }),
+        repo.applyFilter({ status: 'in_progress', dueDate: { $lt: now } }),
         repo.buildUpdateOperation({ set: { status: 'archived' } }),
         { session }
       );
@@ -826,7 +830,7 @@ const optimisticUpdate = async (
   options: { expectedVersion: number, mergeTrace?: any},
 ) => {
   const result = await repo.collection.updateOne(
-    repo.applyConstraints({
+    repo.applyFilter({
       _id: new ObjectId(id),
       _version: options.expectedVersion,
     }),
@@ -906,7 +910,7 @@ Sets the field used to store trace data written on each write (default `_trace`)
 
 This factory returns a repository that implements the full Slire API and Mongo‑specific helpers. It requires a MongoDB `collection` and the `mongoClient`. You may pass a `session` to bind the instance to an existing transaction; otherwise, use the helpers below to work with sessions when needed. The remaining parameters are documented in [Configuration](#configuration): see [scope](#scope), [traceContext](#tracecontext), and options ([softDelete](#softdelete), [traceTimestamps](#tracetimestamps), [timestampKeys](#timestampkeys), [version](#version), [traceStrategy](#tracestrategy), [traceLimit](#tracelimit), [traceKey](#tracekey)).
 
-What you get in addition to the DB‑agnostic API are direct `collection` access, `applyConstraints` for safe filters, `buildUpdateOperation` for update documents with timestamps/version/trace applied, and session/transaction helpers.
+What you get in addition to the DB‑agnostic API are direct `collection` access, `applyFilter` for safe filters, `buildUpdateOperation` for update documents with timestamps/version/trace applied, and session/transaction helpers.
 
 ### Sessions and transactions
 
@@ -954,11 +958,11 @@ await client.withSession(async (session) => {
 
 `collection: Collection<any>`
 
-This property gives direct access to the underlying MongoDB collection instance and allows you to perform advanced MongoDB operations that aren't covered by the Slire interface, such as aggregations, complex queries, bulk operations, or any other collection-level methods. When using the collection directly, you can still leverage the repository's helper methods (`applyConstraints`, `buildUpdateOperation`) to maintain consistency with the repository's configured scoping, timestamps, and versioning behavior.
+This property gives direct access to the underlying MongoDB collection instance and allows you to perform advanced MongoDB operations that aren't covered by the Slire interface, such as aggregations, complex queries, bulk operations, or any other collection-level methods. When using the collection directly, you can still leverage the repository's helper methods (`applyFilter`, `buildUpdateOperation`) to maintain consistency with the repository's configured scoping, timestamps, and versioning behavior.
 
-### applyConstraints
+### applyFilter
 
-`applyConstraints(input: any): any`
+`applyFilter(input: any): any`
 
 Helper method that applies the repository's scope filtering to a given filter object. Takes your custom filter criteria and merges it with the repository's configured scope. If soft-delete is enabled it enriches the filter to ensure operations only target entities within the repository's scope that haven't been soft-deleted. Essential for maintaining data isolation when performing direct queries, updates, deletes, aggregations, or bulk operations on the collection.
 
@@ -975,7 +979,7 @@ const updateOp = repo.buildUpdateOperation(
 );
 
 await repo.collection.updateMany(
-  repo.applyConstraints({ isActive: true }),
+  repo.applyFilter({ isActive: true }),
   updateOp
 );
 ```
@@ -988,7 +992,7 @@ Slire does not include upsert operations to keep the core API simple and semanti
 
 ```ts
 await repo.collection.updateOne(
-  repo.applyConstraints({ _id: new ObjectId(id) }),
+  repo.applyFilter({ _id: new ObjectId(id) }),
   repo.buildUpdateOperation({ set: partialEntity }),
   { upsert: true }
 );
@@ -998,7 +1002,7 @@ await repo.collection.updateOne(
 
 ```ts
 const current = await repo.collection.findOne(
-  repo.applyConstraints({ _id: new ObjectId(id) })
+  repo.applyFilter({ _id: new ObjectId(id) })
 );
 
 // build target input from your payload stripped off of managed fields
@@ -1013,13 +1017,13 @@ const unsetKeys = /* computeUnsetKeys(current, target) -> string[] */;
 // reuse repository logic for timestamps/versioning and validation
 const update = repo.buildUpdateOperation({ set: target, unset: unsetKeys as any });
 await repo.collection.updateOne(
-  repo.applyConstraints({ _id: new ObjectId(id) }),
+  repo.applyFilter({ _id: new ObjectId(id) }),
   update,
   { upsert: true }
 );
 ```
 
-You can still leverage `repo.applyConstraints` for scope/soft-delete filtering and `repo.buildUpdateOperation` for timestamp/version logic in merge-style scenarios. For replace-like behavior with server timestamps, prefer `updateOne` with update modifiers provided by `buildUpdateOperation` (as shown) rather than `replaceOne` as it doesn't support server timestamps.
+You can still leverage `repo.applyFilter` for scope/soft-delete filtering and `repo.buildUpdateOperation` for timestamp/version logic in merge-style scenarios. For replace-like behavior with server timestamps, prefer `updateOne` with update modifiers provided by `buildUpdateOperation` (as shown) rather than `replaceOne` as it doesn't support server timestamps.
 
 Note: The replace-like pattern performs a pre-read to compute unset keys. To avoid race conditions and achieve all-or-nothing behavior, wrap this sequence in a transaction using `runTransaction`.
 
@@ -1037,7 +1041,7 @@ The Firestore implementation provides a repository factory and a small set of he
 
 This factory returns a repository that implements the full Slire API and Firestore‑specific helpers. It requires a Firestore `collection` (a `CollectionReference<T>`) and the `firestore` client. You may pass a `transaction` to bind the instance to an existing Firestore transaction; otherwise, use the helpers below to work with transactions when needed. The remaining parameters are documented in [Configuration](#configuration): see [scope](#scope), [traceContext](#tracecontext), and options ([softDelete](#softdelete), [traceTimestamps](#tracetimestamps), [timestampKeys](#timestampkeys), [version](#version), [traceStrategy](#tracestrategy), [traceLimit](#tracelimit), [traceKey](#tracekey)).
 
-What you get in addition to the DB‑agnostic API are direct `collection` access, `applyConstraints` to add server‑side soft‑delete filtering to queries, `buildUpdateOperation` to generate Firestore update maps with timestamps/version/trace applied, and transaction helpers.
+What you get in addition to the DB‑agnostic API are direct `collection` access, `applyFilter` to add server‑side soft‑delete filtering to queries, `buildUpdateOperation` to generate Firestore update maps with timestamps/version/trace applied, and transaction helpers.
 
 ### Transactions
 
@@ -1066,17 +1070,17 @@ await firestore.runTransaction(async (tx) => {
 
 `collection: CollectionReference<T>`
 
-This property gives direct access to the underlying Firestore collection and allows you to run native queries, batch writes, and transaction operations not covered by the Slire interface. When using the collection directly, prefer `applyConstraints` for queries that should exclude soft‑deleted documents and reuse `buildUpdateOperation` to ensure timestamps, versioning, and tracing are applied consistently.
+This property gives direct access to the underlying Firestore collection and allows you to run native queries, batch writes, and transaction operations not covered by the Slire interface. When using the collection directly, prefer `applyFilter` for queries that should exclude soft‑deleted documents and reuse `buildUpdateOperation` to ensure timestamps, versioning, and tracing are applied consistently.
 
-### applyConstraints
+### applyFilter
 
-`applyConstraints(query: Query): Query`
+`applyFilter(query: Query): Query`
 
 Adds the repository’s server‑side soft‑delete filter to a query. Firestore repositories do not add scope filters to reads because path‑scoped collections are expected; `scope` is validated at write time. Use this helper to append the `where('_deleted', '==', false)` predicate when `softDelete` is enabled.
 
 Example:
 ```ts
-const q = repo.applyConstraints(
+const q = repo.applyFilter(
   repo.collection.where('status', '==', 'in_progress')
 );
 const snap = await q.get();
@@ -1248,12 +1252,12 @@ export async function completeTaskFlow(
 
 ### Use helpers for direct collection operations
 
-As noted earlier — but worth repeating — when you drop to `repo.collection`, keep scope and managed fields consistent: use `applyConstraints(...)` and `buildUpdateOperation(...)` so scope, timestamps, versioning, and tracing are preserved:
+As noted earlier — but worth repeating — when you drop to `repo.collection`, keep scope and managed fields consistent: use `applyFilter(...)` and `buildUpdateOperation(...)` so scope, timestamps, versioning, and tracing are preserved:
 
 ```typescript
 // bulk mark tasks as processed for a tenant
 const taskRepo = createTaskRepo(mongoClient, 'tenant-42');
-const filter = taskRepo.applyConstraints({ status: 'in_progress' });
+const filter = taskRepo.applyFilter({ status: 'in_progress' });
 const update = taskRepo.buildUpdateOperation({ set: { processed: true } }, { job: 'daily-rollup' });
 await taskRepo.collection.updateMany(filter, update);
 ```
@@ -1357,7 +1361,7 @@ Exploratory backends (no ETA):
 
 Yes. Slire is intentionally small. You can:
 - Use Slire for collections where you want its consistency features, and keep your existing ORM/ODM elsewhere.
-- Use your ORM/ODM for complex reads/aggregations and call native driver operations, reusing Slire helpers like `applyConstraints(...)` and `buildUpdateOperation(...)` to keep scope/timestamps/versioning/tracing consistent.
+- Use your ORM/ODM for complex reads/aggregations and call native driver operations, reusing Slire helpers like `applyFilter(...)` and `buildUpdateOperation(...)` to keep scope/timestamps/versioning/tracing consistent.
 
 ### Why implementations for MongoDB and Firestore?
 

@@ -153,7 +153,7 @@ function createAuditedTaskRepo(client: MongoClient, tenantId: string) {
         return session.withTransaction(async () => {
           const txRepo = baseRepo.withSession(session);
           const updateOp = txRepo.buildUpdateOperation(update, options?.mergeTrace);
-          const filter = txRepo.applyConstraints({ _id: new ObjectId(id) });
+          const filter = txRepo.applyFilter({ _id: new ObjectId(id) });
 
           const before = await txRepo.collection.findOne(filter, { session });
           

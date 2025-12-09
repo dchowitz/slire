@@ -2,7 +2,7 @@
 
 This guide explores how to choose the right abstraction and integration points for data access in Node.js services, so that database concerns don’t leak unnecessarily into business logic. It focuses on patterns for keeping business logic clean while still taking advantage of managed fields, scope, and transactions, whether you use Slire repositories or native drivers directly.
 
-For Slire’s repository API, see `README.md`. For the rationale behind Slire and its philosophy, see `docs/WHY.md`. The patterns here are backend‑agnostic and apply equally when using other repository-style libraries (or Slire‑like abstractions) or when you build your own repositories directly on top of native database clients.
+For Slire’s repository API, see the [API section](../README.md#api). For the rationale behind Slire and its philosophy, see [Why Slire?](./WHY.md#why-slire). The patterns here are backend‑agnostic and apply equally when using other repository-style libraries (or Slire‑like abstractions) or when you build your own repositories directly on top of native database clients.
 
 - [Decoupling Business Logic from Data Access](#decoupling-business-logic-from-data-access)
   - [Scope: Database Operations and Beyond](#scope-database-operations-and-beyond)
@@ -25,7 +25,7 @@ For Slire’s repository API, see `README.md`. For the rationale behind Slire an
 
 ## Decoupling Business Logic from Data Access
 
-A fundamental principle of maintainable software design is keeping business logic independent from data access implementation. Injecting entire repository instances into business logic components creates tight coupling and obscures the actual data dependencies.
+In many applications it’s useful to keep data‑access details from bleeding into business rules, both for clearer separation of concerns and for easier testing. What tends to vary is *how* data access is exposed to that business logic: some codebases inject entire repository instances regardless of what a function actually needs, which feels convenient but creates tight coupling and hides the real data dependencies behind a very broad interface.
 
 A common counterargument is that "unit testing is easy when you can just mock the entire repository or data access service with a fake implementation that works in memory." This practice is indeed widespread: teams often create fake implementations of a service or repository interface for testing. However, this apparent convenience is actually a design smell that encourages poor architecture. The ease of mocking entire repositories tempts developers to inject whole repository instances in the first place, because changes to business logic data access patterns don't require signature changes - the same repository interface accommodates any new data operations. This practice also encourages passing repositories down through call chains and intermixing data access with business logic, since the repository is always readily available wherever it's needed. While this seems convenient, it actually hides evolving dependencies and makes the true data access patterns invisible at the interface level. This directly leads to over-privileged access (since the full repository is always available), unclear dependencies (since the interface doesn't reveal actual usage), and tight coupling (since business logic becomes dependent on the complete repository contract rather than specific operations).
 
@@ -504,7 +504,7 @@ export async function recomputeProjectTaskSummaries({
           nextDueDate?: Date;
         }>(
           [
-            { $match: taskRepo.applyConstraints({}) },
+            { $match: taskRepo.applyFilter({}) },
             {
               $group: {
                 _id: '$projectId',
@@ -563,7 +563,7 @@ export async function recomputeProjectTaskSummaries({
       await projectRepo.collection.bulkWrite(
         summaries.map((s) => ({
           updateOne: {
-            filter: projectRepo.applyConstraints({ _id: s.projectId }),
+            filter: projectRepo.applyFilter({ _id: s.projectId }),
             update: projectRepo.buildUpdateOperation({
               set: {
                 openTaskCount: s.openTaskCount,
@@ -1397,7 +1397,7 @@ async function runStaleTaskCleanupJobOptimized(tenantId: string) {
   const repo = createTaskRepo(mongoClient, { tenantId });
 
   // MongoDB-specific: efficient single deleteMany operation
-  const filter = repo.applyConstraints(createStaleTaskSpec(30).toFilter());
+  const filter = repo.applyFilter(createStaleTaskSpec(30).toFilter());
   const result = await repo.collection.deleteMany(filter);
 
   logger.info(`Cleaned up ${result.deletedCount} stale tasks`);
