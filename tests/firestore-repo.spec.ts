@@ -3148,7 +3148,7 @@ describe('createFirestoreRepo', function () {
       ).toThrow('Cannot unset readonly properties: tenantId');
     });
 
-    it('applyConstraints excludes soft-deleted documents', async () => {
+    it('applyFilter excludes soft-deleted documents', async () => {
       const repo = createFirestoreRepo({
         collection: testCollection(),
         firestore: firestore.firestore,
@@ -3162,7 +3162,7 @@ describe('createFirestoreRepo', function () {
       // soft delete B
       await repo.delete(b);
 
-      const q = repo.applyConstraints(
+      const q = repo.applyFilter(
         repo.collection.where('name', 'in', ['A', 'B']),
       );
       const snap = await (q as any).get();
@@ -3170,7 +3170,7 @@ describe('createFirestoreRepo', function () {
       expect(names).toEqual(['A']);
     });
 
-    it('applyConstraints does not add scope filters (reads ignore scope)', async () => {
+    it('applyFilter does not add scope filters (reads ignore scope)', async () => {
       const base = createFirestoreRepo({
         collection: testCollection(),
         firestore: firestore.firestore,
@@ -3190,7 +3190,7 @@ describe('createFirestoreRepo', function () {
         options: { softDelete: true },
       });
 
-      const q = scoped.applyConstraints(
+      const q = scoped.applyFilter(
         scoped.collection.where('name', 'in', ['A', 'B']),
       );
       const snap = await (q as any).get();

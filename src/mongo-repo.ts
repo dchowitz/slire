@@ -46,7 +46,7 @@ export type MongoRepo<
 > = Prettify<
   Repo<T, Scope, Config, Managed, UpdateInput, CreateInput> & {
     collection: Collection<T & { _id: string }>;
-    applyConstraints: (input: any) => any;
+    applyFilter: (input: any) => any;
     buildUpdateOperation: (
       update: UpdateOperation<UpdateInput>,
       mergeTrace?: any,
@@ -295,7 +295,7 @@ export function createMongoRepo<
     return mongoUpdate;
   }
 
-  function applyConstraints(input: any): any {
+  function applyFilter(input: any): any {
     return {
       ...input,
       ...scope,
@@ -414,7 +414,7 @@ export function createMongoRepo<
       projection?: P,
     ): Promise<Projected<T, P> | undefined> => {
       const doc = await collection.findOne(
-        applyConstraints(idFilter(id)),
+        applyFilter(idFilter(id)),
         withSessionOptions(getProjection(projection)),
       );
       return doc ? fromMongoDoc(doc, projection) : undefined;
@@ -426,7 +426,7 @@ export function createMongoRepo<
     ): Promise<[Projected<T, P>[], string[]]> => {
       const docs = await collection
         .find(
-          applyConstraints(idsFilter(ids)),
+          applyFilter(idsFilter(ids)),
           withSessionOptions(getProjection(projection)),
         )
         .toArray();
@@ -471,7 +471,7 @@ export function createMongoRepo<
           offset + MONGODB_MAX_MODIFICATIONS_PER_TRANSACTION,
         );
         const ops = batch.map((doc) => {
-          const filter = applyConstraints(filterForDoc(doc));
+          const filter = applyFilter(filterForDoc(doc));
           const update: any = applyTrace(
             'create',
             applyVersion(
@@ -553,7 +553,7 @@ export function createMongoRepo<
           options?.mergeTrace,
         );
         await collection.updateMany(
-          applyConstraints(idsFilter(idChunk)),
+          applyFilter(idsFilter(idChunk)),
           updateOperation,
           withSessionOptions(),
         );
@@ -575,7 +575,7 @@ export function createMongoRepo<
       const chunks = chunk(ids, MONGODB_IN_OPERATOR_MAX_CLAUSES);
 
       for (const idChunk of chunks) {
-        const filter = applyConstraints(idsFilter(idChunk));
+        const filter = applyFilter(idsFilter(idChunk));
         if (config.softDeleteEnabled) {
           const updateOperation = applyTrace(
             'delete',
@@ -634,7 +634,7 @@ export function createMongoRepo<
 
       const cursor = collection
         .find(
-          applyConstraints(mongoFilter),
+          applyFilter(mongoFilter),
           withSessionOptions(getProjection(options?.projection)),
         )
         .sort(sortOption);
@@ -718,7 +718,7 @@ export function createMongoRepo<
         }
 
         const startAfterDoc = await collection.findOne(
-          applyConstraints({ _id: cursorId }),
+          applyFilter({ _id: cursorId }),
           withSessionOptions({
             projection: Object.fromEntries(
               Object.keys(sortOption).map((k) => [k, 1]),
@@ -742,7 +742,7 @@ export function createMongoRepo<
 
       let cursor = collection
         .find(
-          applyConstraints(mongoFilter),
+          applyFilter(mongoFilter),
           withSessionOptions(getProjection(options.projection)),
         )
         .sort(sortOption);
@@ -794,7 +794,7 @@ export function createMongoRepo<
 
       const mongoFilter = convertFilter(filter);
       return await collection.countDocuments(
-        applyConstraints(mongoFilter),
+        applyFilter(mongoFilter),
         withSessionOptions(),
       );
     },
@@ -815,7 +815,7 @@ export function createMongoRepo<
     collection: collection as unknown as Collection<T & { _id: string }>,
 
     // Adds scope filter and soft-delete filter (if configured), with option to include soft-deleted
-    applyConstraints: applyConstraints,
+    applyFilter: applyFilter,
 
     // Applies enrichments (such as timestamps) and enforces constraints (writing readonly props not allowed)
     buildUpdateOperation: buildUpdateOperation,

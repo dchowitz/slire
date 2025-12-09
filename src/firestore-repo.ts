@@ -33,10 +33,7 @@ import {
 import { Prettify } from './types';
 
 // Firestore-specific repository config that excludes 'bounded' strategy
-export type FirestoreRepositoryConfig<T> = Omit<
-  RepoConfig<T>,
-  'traceStrategy'
-> & {
+type FirestoreRepoConfig<T> = Omit<RepoConfig<T>, 'traceStrategy'> & {
   traceStrategy?: 'latest' | 'unbounded';
 };
 
@@ -61,7 +58,7 @@ export type FirestoreRepo<
 > = Prettify<
   Repo<T, Scope, Config, Managed, UpdateInput, CreateInput> & {
     collection: CollectionReference<T>;
-    applyConstraints: (query: Query) => Query;
+    applyFilter: (query: Query) => Query;
     buildUpdateOperation: (
       update: UpdateOperation<UpdateInput>,
       mergeTrace?: any,
@@ -84,7 +81,7 @@ export type FirestoreRepo<
 export function createFirestoreRepo<
   T extends { id: string },
   Scope extends Partial<T> = {},
-  Config extends FirestoreRepositoryConfig<T> = {},
+  Config extends FirestoreRepoConfig<T> = {},
   Managed extends ManagedFields<T, Config, Scope> = ManagedFields<
     T,
     Config,
@@ -242,7 +239,7 @@ export function createFirestoreRepo<
     return firestoreUpdate;
   }
 
-  function applyConstraints(query: Query): Query {
+  function applyFilter(query: Query): Query {
     let constrainedQuery = query;
 
     if (config.softDeleteEnabled) {
@@ -501,7 +498,7 @@ export function createFirestoreRepo<
       options?: { mergeTrace?: any },
     ): Promise<void> => {
       const updateOperation = buildUpdateOperation(update, options?.mergeTrace);
-      const query = applyConstraints(
+      const query = applyFilter(
         collection.where(FieldPath.documentId(), '==', id).select(),
       );
 
@@ -535,7 +532,7 @@ export function createFirestoreRepo<
         );
 
         for (const inChunk of chunk(idChunk, FIRESTORE_IN_LIMIT)) {
-          const query = applyConstraints(
+          const query = applyFilter(
             collection.where(FieldPath.documentId(), 'in', inChunk).select(),
           );
 
@@ -567,7 +564,7 @@ export function createFirestoreRepo<
           options?.mergeTrace,
         );
 
-        const query = applyConstraints(
+        const query = applyFilter(
           collection.where(FieldPath.documentId(), '==', id).select(),
         );
 
@@ -613,7 +610,7 @@ export function createFirestoreRepo<
         // and are not soft-deleted (idempotency, otherwise we'd have multiple delete trace entries)
         const snaps = await Promise.all(
           chunk(idChunk, FIRESTORE_IN_LIMIT).map((inChunk) => {
-            const query = applyConstraints(
+            const query = applyFilter(
               collection.where(FieldPath.documentId(), 'in', inChunk).select(),
             );
             return transaction ? transaction.get(query) : query.get();
@@ -672,7 +669,7 @@ export function createFirestoreRepo<
         }
       }
 
-      query = applyConstraints(query);
+      query = applyFilter(query);
 
       // Apply ordering
       let orderByContainsId = false;
@@ -766,7 +763,7 @@ export function createFirestoreRepo<
       }
 
       // Apply repository constraints (soft delete, etc.)
-      query = applyConstraints(query);
+      query = applyFilter(query);
 
       // Apply ordering
       let orderByContainsId = false;
@@ -871,7 +868,7 @@ export function createFirestoreRepo<
         }
       }
 
-      query = applyConstraints(query.select());
+      query = applyFilter(query.select());
 
       const agg = await query.count().get();
       return agg.data().count;
@@ -890,7 +887,7 @@ export function createFirestoreRepo<
     collection: collection,
 
     // Adds scope filter and soft-delete filter (if configured), with option to include soft-deleted
-    applyConstraints: applyConstraints,
+    applyFilter,
 
     // Applies enrichments (such as timestamps) and enforces constraints (writing readonly props not allowed)
     buildUpdateOperation: buildUpdateOperation,

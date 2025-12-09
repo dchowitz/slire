@@ -3058,7 +3058,7 @@ describe('createtMongoRepo', function () {
         options: { expectedVersion: number; mergeTrace?: any },
       ) => {
         const result = await repo.collection.updateOne(
-          repo.applyConstraints({
+          repo.applyFilter({
             _id: new ObjectId(id),
             _version: options.expectedVersion,
           }),
@@ -3193,7 +3193,7 @@ describe('createtMongoRepo', function () {
       expect(rawDoc._trace._at).toBeInstanceOf(Date);
     });
 
-    it('applyConstraints with default behavior', async () => {
+    it('applyFilter with default behavior', async () => {
       const acmeRepo = createMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
@@ -3256,7 +3256,7 @@ describe('createtMongoRepo', function () {
 
       const results = await testCollection()
         .aggregate([
-          { $match: fooRepo.applyConstraints({}) },
+          { $match: fooRepo.applyFilter({}) },
           {
             $group: {
               _id: '$isActive',
@@ -3272,7 +3272,7 @@ describe('createtMongoRepo', function () {
       ]);
     });
 
-    it('applyConstraints ignores soft-deleted entities by default', async () => {
+    it('applyFilter ignores soft-deleted entities by default', async () => {
       const repo = createMongoRepo({
         collection: testCollection(),
         mongoClient: mongo.client,
@@ -3287,7 +3287,7 @@ describe('createtMongoRepo', function () {
 
       // Default behavior - should not match soft-deleted entity
       await repo.collection.updateOne(
-        repo.applyConstraints({ _id: new ObjectId(id) }),
+        repo.applyFilter({ _id: new ObjectId(id) }),
         {
           $set: { _notInModel: 'default' },
         },
@@ -3300,7 +3300,7 @@ describe('createtMongoRepo', function () {
 
       // No override; soft-deleted doc is ignored
       await repo.collection.updateOne(
-        repo.applyConstraints({ _id: new ObjectId(id) }),
+        repo.applyFilter({ _id: new ObjectId(id) }),
         {
           $set: { _notInModel: 'included' },
         },
