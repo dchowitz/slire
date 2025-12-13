@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.0.0] - 2025-12-13
+### Breaking
+- MongoDB helper rename: `applyConstraints` has been renamed to `applyFilter` on `MongoRepo`. Update any direct `repo.applyConstraints(...)` usages to `repo.applyFilter(...)`.
+- Stricter filter typing and validation: `Filter<T>` and the runtime validator now only accept scalar values on leaf fields (including dot-paths like `'metadata.assigneeId'`). Passing nested objects/arrays (for example `{ metadata: { foo: 'bar' } }`) is now rejected by types and/or at runtime; this may surface previously-silent bugs.
+- Stricter `options` typing on repo factories: `createMongoRepo` / `createFirestoreRepo` now expose a strongly-typed `options` parameter matching the repo config. Mis-typed or unknown config keys that previously compiled may now fail type-checking.
+
+### Changed
+- Docs: clarify filter semantics, helper naming, and configuration options.
+
 ## [0.0.6] - 2025-12-07
 ### Changed
 - Docs: DESIGN — overhaul, better examples
@@ -35,7 +44,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - Initial public version.
 
 <!-- Links -->
-[Unreleased]: https://github.com/dchowitz/slire/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/dchowitz/slire/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/dchowitz/slire/compare/v0.0.6...v1.0.0
 [0.0.6]: https://github.com/dchowitz/slire/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/dchowitz/slire/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/dchowitz/slire/compare/v0.0.3...v0.0.4
