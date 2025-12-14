@@ -49,7 +49,7 @@ Slire is native‑driver first. The database drivers are peer dependencies — i
 
 ## Quickstart
 
-Slire implements the repository pattern: a collection‑like interface for accessing and manipulating domain objects. Each repository is bound to a specific database collection.
+Slire implements the repository pattern: a collection‑like interface for accessing and manipulating database objects. Each repository is bound to a specific database collection.
 
 A Slire repository is instantiated with a configuration that defines which fields are managed automatically (id, timestamps, version, trace) and which scope to apply. Scope is a fixed filter that enforces tenancy/data partitioning across all operations.
 
@@ -140,9 +140,9 @@ const list = await repo
   .toArray();
 ```
 
-The full list is documented in the [API Reference](#api-reference-core-crud-operations-slire-interface) section.
+The full list is documented in the [API Reference](#api) section.
 
-Here's how [transactions](#runtransaction) work:
+Here's how transactions work:
 
 ```typescript
 await repo.runTransaction(async (tx) => {
@@ -541,7 +541,7 @@ do {
 
 `findPageBySpec<S extends Specification<T>, P extends Projection<T>>(spec: S, options: FindPageOptions & { projection: P }): Promise<PageResult<Projected<T, P>>>`
 
-Provides cursor-based pagination using specification objects for query criteria. Works identically to `findPage` but accepts a `Specification<T>` instead of a filter object, enabling reusable, composable query logic. See [Query Abstraction Patterns](#query-abstraction-patterns) for detailed examples of the specification pattern.
+Provides cursor-based pagination using specification objects for query criteria. Works identically to `findPage` but accepts a `Specification<T>` instead of a filter object, enabling reusable, composable query logic. See [Query Abstraction Patterns](docs/DESIGN.md#query-abstraction-patterns) for detailed examples of the specification pattern.
 
 See database‑specific notes under [findPage](#findpage).
 
